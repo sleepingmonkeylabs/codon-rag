@@ -1,0 +1,20 @@
+# codon-rag Python dependencies
+# Install with: pip install -r requirements.txt
+#
+# Requires Python 3.12+
+# Requires Ollama running locally: https://ollama.com/download
+
+# ── Embeddings ────────────────────────────────────────────────────────────────
+sentence-transformers>=2.7.0
+
+# ── Vector store ──────────────────────────────────────────────────────────────
+chromadb>=0.5.0
+
+# ── LangChain stack (used by rag_lc.py and app.py) ───────────────────────────
+langchain-core>=0.3.0
+langchain-chroma>=0.1.4
+langchain-ollama>=0.2.0
+langchain-huggingface>=0.1.0
+
+# ── Streamlit UI ──────────────────────────────────────────────────────────────
+streamlit>=1.35.0

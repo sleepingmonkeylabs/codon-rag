@@ -23,7 +23,7 @@ User question  →  embed (MiniLM)  →  similarity search (top-K)
 ### Stack
 
 | Layer | Technology |
-|-------|-----------|
+|---|---|
 | Corpus | 8 Markdown files in `data/corpus/` |
 | Chunking | Paragraph-split (default) or fixed-character |
 | Embeddings | `all-MiniLM-L6-v2` via `sentence-transformers` / `langchain-huggingface` |
@@ -41,7 +41,7 @@ User question  →  embed (MiniLM)  →  similarity search (top-K)
 ```
 codon-rag/
 ├── app.py                  # Streamlit chat UI (uses rag_lc-style chain)
-├── requirements.txt        # Python dependencies (currently empty — see Prerequisites)
+├── requirements.txt        # Python dependencies
 ├── ngrok.exe               # ngrok binary for public tunneling
 ├── src/
 │   ├── config.py           # All tunable parameters — edit here first
@@ -51,14 +51,6 @@ codon-rag/
 │   └── rag_lc.py           # Full RAG CLI using LangChain
 ├── data/
 │   ├── corpus/             # Source documents (8 .md files)
-│   │   ├── 01_company_overview.md
-│   │   ├── 02_services.md
-│   │   ├── 03_industries.md
-│   │   ├── 04_industrial_edge.md
-│   │   ├── 05_case_studies.md
-│   │   ├── 06_blog_and_resources.md
-│   │   ├── 07_contact_and_careers.md
-│   │   └── 08_sitemap_and_links.md
 │   └── test_questions.txt  # 5 canonical eval questions
 ├── chroma_db/              # Persisted ChromaDB vector store (git-ignored)
 └── notebooks/
@@ -67,178 +59,152 @@ codon-rag/
 
 ---
 
-## Configuration (`src/config.py`)
+## Quick Commands
 
-All tunable knobs live here. **Change config here, not in individual scripts.**
+```bash
+python src/ingest.py                    # build / rebuild the vector store
+python src/query.py "question"         # retrieval debug (no LLM)
+python src/rag.py "question"           # full RAG, raw Python
+python src/rag_lc.py "question"       # full RAG, LangChain
+streamlit run app.py                   # chat UI at localhost:8501
+```
+
+---
+
+## Next Steps
+
+The items below are the agreed-upon improvements for the next development phase, ordered roughly by dependency. Complete them in sequence — each one unblocks the next.
+
+---
+
+### 1. Better ChromaDB Indexing
+
+**Current state.** Each chunk is stored with only two metadata fields — `source` (filename) and `chunk_index` (integer). There is no stable identifier linking a chunk to the knowledge base it belongs to, and no way to filter or delete by file without a full re-ingest.
+
+**Goal.** Store richer, queryable metadata on every chunk so that retrieval can be scoped and individual documents or entire KBs can be managed surgically.
+
+**Fields to add to every chunk's metadata in `ingest.py`:**
+
+| Field | Type | Description |
+|---|---|---|
+| `kb_id` | `str` | Stable identifier for the knowledge base (e.g. `"codon_kb"`). Enables per-KB filtering and deletion. |
+| `source_file` | `str` | Filename (rename from `source` for clarity). |
+| `source_path` | `str` | Repo-relative path to the source file. |
+| `doc_id` | `str` | Stable hash of `kb_id + filename`. Groups all chunks from one file — essential for file-level deletion. |
+| `chunk_index` | `int` | Position of this chunk within the file (already stored). |
+| `total_chunks` | `int` | Total chunks produced from this file. Useful for completeness checks. |
+| `ingested_at` | `str` | ISO-8601 timestamp of ingestion. |
+
+**Implementation notes.** ChromaDB already supports metadata filtering and deletion — no schema changes are needed. The only change is populating the metadata dict in `ingest.py`. Update `query.py` to print the new fields for visibility during debugging.
+
+---
+
+### 2. Multiple Knowledge Bases
+
+**Current state.** There is a single ChromaDB collection (`codon_docs`) and a single corpus directory. Every ingest wipes and recreates this one collection.
+
+**Goal.** Support multiple independent knowledge bases (e.g. one per client, product, or domain) that do not interfere with each other. Users should be able to select which KB to query.
+
+**Proposed design.** Introduce a KB registry at `data/kb_registry.json`:
+
+```json
+{
+  "codon": {
+    "kb_id": "codon",
+    "collection": "codon_docs",
+    "corpus_dir": "data/corpus/codon",
+    "description": "Codon Consulting public website content"
+  },
+  "client_x": {
+    "kb_id": "client_x",
+    "collection": "client_x_docs",
+    "corpus_dir": "data/corpus/client_x",
+    "description": "Client X product documentation"
+  }
+}
+```
+
+**Changes required across the codebase:**
+
+- `config.py` — add `KB_REGISTRY_PATH`; remove the single hardcoded `COLLECTION` and `CORPUS_DIR` (or keep them as defaults for backward compatibility).
+- `ingest.py` — accept `--kb <kb_id>` argument; look up corpus dir and collection name from the registry; write `kb_id` into chunk metadata.
+- `rag.py` / `rag_lc.py` — accept `--kb <kb_id>` to set the target collection.
+- `app.py` — add a sidebar `st.selectbox` listing all registered KBs; pass the selected collection to the chain.
+
+**Cross-KB search (stretch goal).** When the user selects "All", query each collection separately, merge results, re-rank by distance, de-duplicate, then send to the LLM.
+
+---
+
+### 3. Deletion Strategy
+
+**Current state.** There is no deletion path. The only way to remove content is a full destructive re-ingest via `ingest.py`.
+
+**Goal.** Support three levels of targeted deletion so content can be removed or updated without rebuilding everything.
+
+**File-level deletion** — remove all chunks from a single source file:
 
 ```python
-# Paths
-CORPUS_DIR   # Absolute path to data/corpus/
-CHROMA_DIR   # Absolute path to chroma_db/
-
-# ChromaDB
-COLLECTION   = "codon_docs"
-DISTANCE     = "cosine"          # "cosine" | "l2" | "ip"
-
-# Embedding
-EMBED_MODEL  = "all-MiniLM-L6-v2"   # 384-dim, runs fully locally
-
-# Chunking
-CHUNK_STRATEGY   = "paragraph"   # "paragraph" | "fixed"
-FIXED_CHUNK_SIZE = 200           # chars — only used when CHUNK_STRATEGY == "fixed"
-
-# Retrieval
-TOP_K                = 5
-RELEVANCE_THRESHOLD  = 0.45      # cosine distance cutoff — only applied in rag.py
+# ChromaDB supports this natively once doc_id metadata is in place (see §1)
+collection.delete(where={"doc_id": "<hash>"})
 ```
 
-> **Note:** `CORPUS_DIR` and `CHROMA_DIR` are hardcoded absolute Windows paths. Update them when running on a different machine.
+Expose this as: `python src/ingest.py --delete-file <filename> [--kb <kb_id>]`
+
+**KB-level deletion** — drop an entire collection:
+
+```python
+client.delete_collection(collection_name)
+# then remove from kb_registry.json
+```
+
+Expose this as: `python src/ingest.py --delete-kb <kb_id>`
+
+**Incremental add** — add new files without a full re-ingest:
+
+Before embedding, check whether a `doc_id` already exists in the collection (`collection.get(where={"doc_id": "..."})`). If found and the file is unchanged (compare a `file_hash` stored in metadata), skip it. If changed, delete the old chunks and re-embed. This removes the need for destructive re-ingest on routine corpus updates.
 
 ---
 
-## Commands
+### 4. Two-Page Streamlit Frontend
 
-### 1. Ingest (required before first use, and after any corpus/config changes)
+**Current state.** `app.py` is a single-page chat interface with no UI for managing knowledge bases or documents.
 
-```bash
-python src/ingest.py
+**Goal.** Split the UI into two focused pages using Streamlit's multipage app structure:
+
+```
+app.py                         # landing / entry point
+pages/
+├── 1_Knowledge_Bases.py       # KB management
+└── 2_Ask.py                   # chat interface
 ```
 
-- Reads all `.md` files from `CORPUS_DIR`
-- Chunks them using `CHUNK_STRATEGY`
-- Embeds chunks with `EMBED_MODEL`
-- Drops the existing ChromaDB collection (idempotent) and recreates it
-- Writes everything to `CHROMA_DIR`
+**Page 1 — Knowledge Bases (`pages/1_Knowledge_Bases.py`)**
 
-Re-run whenever you: add/edit corpus files, change `CHUNK_STRATEGY`, or change `EMBED_MODEL`.
+This page is for managing what the assistant knows.
 
-### 2. Retrieval debug (no LLM)
+- **KB overview table** — list all KBs from `kb_registry.json` with name, description, chunk count (from `collection.count()`), and last ingested timestamp.
+- **Create KB** — a form with KB name, description, and corpus directory; writes to `kb_registry.json` and triggers ingestion.
+- **Add documents** — `st.file_uploader` accepting `.md` or `.txt` files; saves to the KB's corpus directory and runs incremental ingest on just the new files.
+- **Delete document** — selectbox listing files in the active KB; calls file-level deletion (§3).
+- **Delete KB** — confirmation dialog followed by collection drop and registry removal.
+- **Re-ingest KB** — force a full destructive re-ingest of the selected KB's corpus directory.
 
-```bash
-python src/query.py "What industries does Codon work in?"
-python src/query.py   # interactive prompt
-```
+**Page 2 — Ask (`pages/2_Ask.py`)**
 
-Embeds the question, queries ChromaDB, and prints ranked chunks with distances. Use this to tune `TOP_K`, `DISTANCE`, and `CHUNK_STRATEGY` without waiting for an LLM.
+This page is the existing chat interface, extended with KB awareness.
 
-### 3. Full RAG — raw (CLI)
+- **KB selector** — `st.sidebar.selectbox` listing all registered KBs; the chain is rebuilt (or retrieved from cache) when the selection changes.
+- **Chat history** — existing `st.chat_message` loop, unchanged.
+- **Retrieved chunks expander** — existing expandable section showing source, distance, and chunk preview.
+- **Clear chat button** — `st.sidebar.button("Clear conversation")` resetting `st.session_state.messages`.
 
-```bash
-python src/rag.py "What makes Codon different from other AI consultancies?"
-python src/rag.py   # interactive prompt
-```
-
-Retrieves top-K chunks, filters by `RELEVANCE_THRESHOLD` (drops chunks with `dist > 0.45`), builds a prompt, calls Ollama via raw HTTP, and prints the answer + retrieved chunk previews.
-
-### 4. Full RAG — LangChain (CLI)
-
-```bash
-python src/rag_lc.py "What AI services does Codon offer?"
-```
-
-Same pipeline as `rag.py` but implemented as a LangChain LCEL chain. Does **not** apply the relevance threshold filter.
-
-### 5. Streamlit UI
-
-```bash
-streamlit run app.py
-```
-
-Launches the Codon Sales Assistant chat interface at `http://localhost:8501`. Shows retrieved chunks in an expander below each answer. The chain is cached with `@st.cache_resource` so the model loads once per session.
-
-### 6. Public tunnel (optional)
-
-```bash
-./ngrok http 8501
-```
-
-Exposes the local Streamlit server publicly. Requires an ngrok account and authtoken configured.
+**Caching note.** Use `st.cache_resource` keyed by `kb_id` so switching KBs loads the correct vector store without reloading the embedding model. Cache the embedding model once at the top level since it is KB-agnostic.
 
 ---
 
-## Prerequisites
+## Known Issues & Technical Debt
 
-- **Python 3.12+**
-- **Ollama** running locally with the `ministral-3:3b` model pulled:
-  ```bash
-  ollama serve               # starts Ollama at http://127.0.0.1:11434
-  ollama pull ministral-3:3b
-  ```
-- **Python dependencies** (install manually — `requirements.txt` is currently empty):
-  ```bash
-  pip install sentence-transformers chromadb \
-              langchain-chroma langchain-ollama \
-              langchain-huggingface langchain-core \
-              streamlit
-  ```
-
----
-
-## Corpus Documents
-
-The knowledge base is 8 Markdown files scraped from `codon.se` (April 2026):
-
-| File | Content |
-|------|---------|
-| `01_company_overview.md` | Identity, mission, core team (Erik Fredlund, Founder & MD), founding 2019, Stockholm HQ |
-| `02_services.md` | Analytics, custom ML models, AI-driven operations, NLP, computer vision, data strategy |
-| `03_industries.md` | Manufacturing, process industries, life sciences, property management |
-| `04_industrial_edge.md` | OT/IT integration, ISA-95 vertical strategy, Siemens Industrial Edge Partnership (Jan 2026) |
-| `05_case_studies.md` | 14 client projects across IoT, agriculture, pharma, life sciences, NLP, retail, media |
-| `06_blog_and_resources.md` | Blog posts, Data Science Friday events, ebook |
-| `07_contact_and_careers.md` | Contact info (info@codon.se), careers/culture, role types |
-| `08_sitemap_and_links.md` | Full URL inventory of codon.se |
-
-### Test Questions (`data/test_questions.txt`)
-
-```
-What industries does Codon work in?
-What makes Codon different from other AI consultancies?
-How do I contact Codon?
-What is Codon's Forward Deployed Engineering model?
-What AI services does Codon offer?
-```
-
-Use these to validate retrieval quality after any ingestion or config change.
-
----
-
-## Two RAG Implementations
-
-The project maintains two parallel RAG implementations that produce equivalent results but differ in approach:
-
-| | `rag.py` | `rag_lc.py` / `app.py` |
-|---|---|---|
-| Framework | Raw Python (`urllib`, `chromadb`, `sentence-transformers`) | LangChain LCEL |
-| Ollama | Direct HTTP POST to `/api/chat` | `ChatOllama` |
-| Embeddings | `SentenceTransformer` directly | `HuggingFaceEmbeddings` |
-| ChromaDB | `chromadb.PersistentClient` | `langchain_chroma.Chroma` |
-| Relevance filter | Yes — drops chunks with `dist > RELEVANCE_THRESHOLD` | No |
-| Use case | Learning / debugging / minimal deps | Production UI (`app.py`) |
-
----
-
-## Design Decisions & Gotchas
-
-**Fully local stack.** No OpenAI, no Anthropic, no cloud embeddings. The only network call in normal operation is to `http://127.0.0.1:11434` (Ollama).
-
-**Ingest is destructive.** `ingest.py` drops and recreates the ChromaDB collection on every run. This ensures idempotency but means re-ingesting from scratch — there is no incremental update path.
-
-**Hardcoded Windows paths in `config.py`.** `CORPUS_DIR` and `CHROMA_DIR` use `r"C:\Users\DmitriApassov\..."`. Update these when cloning to a new machine or moving the project.
-
-**Relevance threshold only in `rag.py`.** If `rag.py` returns "No relevant chunks found," the question is likely outside the corpus scope or the threshold (`0.45`) is too tight. Inspect raw distances with `query.py` first.
-
-**LLM model hardcoded in two places.** `ministral-3:3b` appears in both `rag.py` (`OLLAMA_MODEL` constant) and `app.py`/`rag_lc.py` (`ChatOllama(model=...)`). Centralizing it in `config.py` would be a clean improvement.
-
-**`requirements.txt` is empty.** Pin working versions with `pip freeze > requirements.txt` (filtered to project deps) when the environment is stable.
-
----
-
-## Extending the Project
-
-- **Add corpus documents:** Drop new `.md` files in `data/corpus/` and re-run `python src/ingest.py`.
-- **Tune retrieval:** Adjust `TOP_K`, `RELEVANCE_THRESHOLD`, `CHUNK_STRATEGY`, or `DISTANCE` in `config.py`, re-ingest, then test with `query.py`.
-- **Swap the LLM:** Change `OLLAMA_MODEL` in `rag.py` and the `ChatOllama(model=...)` call in `app.py` to any model pulled in your Ollama instance.
-- **Swap the embedding model:** Update `EMBED_MODEL` in `config.py` and re-ingest (the existing ChromaDB embeddings will be stale).
-- **Add chunk overlap:** `chunk_fixed()` in `ingest.py` currently has no overlap. Add a `step` parameter smaller than `size` to create overlapping windows.
-- **Add relevance filtering to the LangChain chain:** Wrap the retriever in a custom `RunnableLambda` that filters by distance score, mirroring the logic in `rag.py`.
+- `OLLAMA_MODEL` (`ministral-3:3b`) is hardcoded in both `rag.py` and `app.py`/`rag_lc.py`. Centralize it in `config.py`.
+- `CORPUS_DIR` and `CHROMA_DIR` are absolute Windows paths. Replace with `pathlib.Path(__file__).parent.parent / "..."` for cross-platform portability.
+- `chunk_fixed()` in `ingest.py` has no overlap. Add a `step` parameter smaller than `size` to improve retrieval across chunk boundaries.
+- The LangChain chain in `rag_lc.py` and `app.py` does not apply `RELEVANCE_THRESHOLD`. Add a `RunnableLambda` filter to match `rag.py` behavior.
