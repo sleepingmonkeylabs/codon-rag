@@ -202,6 +202,26 @@ This page is the existing chat interface, extended with KB awareness.
 
 ---
 
+## Stretch: Hybrid Retrieval (BM25 + Vector + Knowledge Graph)
+
+The current retrieval pipeline is pure cosine similarity over dense embeddings. This works well at small corpus sizes but has a known weakness: vocabulary mismatch. A query like "database performance optimization" will miss a chunk that says "fixed the N+1 query problem" unless the embedding model happens to place them close in vector space.
+
+[agentmemory](https://github.com/rohitg00/agentmemory) (a persistent memory layer for AI coding agents) uses a three-stream retrieval architecture worth borrowing from if retrieval quality becomes a concern — for example, as the corpus grows with multi-KB support:
+
+**Stream 1 — BM25 (keyword).** Stemmed full-text search with domain synonym expansion (e.g. "db" ↔ "database", "perf" ↔ "performance"). Catches exact-match cases that vector search misses. Add via `rank_bm25` (pure Python, no new infrastructure).
+
+**Stream 2 — Vector (semantic).** Existing cosine similarity over `all-MiniLM-L6-v2` embeddings. Catches paraphrase and concept-level matches that keyword search misses.
+
+**Stream 3 — Knowledge graph (structural).** Entity extraction over the corpus (people, products, concepts, file names) stored as nodes and edges. Queries traverse the graph via BFS to pull in structurally related chunks even when neither keyword nor vector similarity is high. More complex — requires an extraction pass at ingest time and a graph store (NetworkX is sufficient at this scale).
+
+**Fusion.** All three streams are merged using **Reciprocal Rank Fusion** (RRF, k=60): each document gets a score of `1 / (k + rank)` from each stream, scores are summed, and the top-K results are returned. RRF is robust to streams with incompatible score scales and requires no tuning beyond k.
+
+agentmemory's benchmarks on 240 real-world observations show BM25-only and vector-only each achieve ~56% Recall@10, while the fused hybrid reaches **64% Recall@10** with perfect MRR — using 92% fewer tokens than dumping everything into context. The relative gain should transfer to a document RAG setting.
+
+This is not on the immediate roadmap (the corpus is currently 8 files and pure vector retrieval is adequate), but it is the right next retrieval upgrade once the corpus scales or multi-KB queries are introduced.
+
+---
+
 ## Known Issues & Technical Debt
 
 - `OLLAMA_MODEL` (`ministral-3:3b`) is hardcoded in both `rag.py` and `app.py`/`rag_lc.py`. Centralize it in `config.py`.
