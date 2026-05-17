@@ -4,7 +4,7 @@ from langchain_ollama import ChatOllama
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
 import sys
 sys.path.insert(0, "src")
@@ -26,8 +26,12 @@ def load_chain():
         embedding_function=embeddings,
         persist_directory=cfg.CHROMA_DIR,
     )
-    retriever = vectorstore.as_retriever(search_kwargs={"k": cfg.TOP_K})
-    llm = ChatOllama(model="ministral-3:3b", base_url="http://127.0.0.1:11434")
+    def retrieve_and_filter(question: str):
+        docs_with_scores = vectorstore.similarity_search_with_score(question, k=cfg.TOP_K)
+        return [doc for doc, score in docs_with_scores if score <= cfg.RELEVANCE_THRESHOLD]
+
+    retriever = RunnableLambda(retrieve_and_filter)
+    llm = ChatOllama(model=cfg.OLLAMA_MODEL, base_url="http://127.0.0.1:11434")
     prompt = ChatPromptTemplate.from_template("""
 You are a helpful assistant that answers questions about Codon Consulting.
 Answer using ONLY the context below. If the context is insufficient, say so.
@@ -48,7 +52,7 @@ Question: {question}
     chain = (
         {"context": retriever | format_docs, "question": RunnablePassthrough()}
         | prompt
-        | ChatOllama(model="ministral-3:3b", base_url="http://127.0.0.1:11434")
+        | llm
         | StrOutputParser()
     )
     return chain, vectorstore

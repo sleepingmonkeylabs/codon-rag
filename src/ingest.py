@@ -21,16 +21,18 @@ def chunk_paragraph(text: str) -> list[str]:
     return [p.strip() for p in text.split("\n\n") if p.strip()]
 
 
-def chunk_fixed(text: str, size: int) -> list[str]:
-    """Hard split at `size` characters. No overlap (yet)."""
-    return [text[i : i + size] for i in range(0, len(text), size)]
+def chunk_fixed(text: str, size: int, step: int = None) -> list[str]:
+    """Hard split at `size` characters. Uses `step` for overlap."""
+    if step is None:
+        step = size
+    return [text[i : i + size] for i in range(0, len(text), step)]
 
 
 def get_chunks(text: str) -> list[str]:
     if cfg.CHUNK_STRATEGY == "paragraph":
         return chunk_paragraph(text)
     elif cfg.CHUNK_STRATEGY == "fixed":
-        return chunk_fixed(text, cfg.FIXED_CHUNK_SIZE)
+        return chunk_fixed(text, cfg.FIXED_CHUNK_SIZE, getattr(cfg, "FIXED_CHUNK_STEP", cfg.FIXED_CHUNK_SIZE))
     else:
         raise ValueError(f"Unknown CHUNK_STRATEGY: {cfg.CHUNK_STRATEGY!r}")
 

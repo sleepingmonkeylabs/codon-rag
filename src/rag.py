@@ -19,8 +19,7 @@ import config as cfg
 
 # ── Ollama ────────────────────────────────────────────────────────────────────
 OLLAMA_URL  = "http://127.0.0.1:11434/api/chat"
-#OLLAMA_MODEL = "llama3.1:8b"
-OLLAMA_MODEL = "ministral-3:3b"
+OLLAMA_MODEL = cfg.OLLAMA_MODEL
 
 SYSTEM_PROMPT = """You are a helpful assistant that answers questions about Codon Consulting.
 Answer using ONLY the context provided below. Do not use prior knowledge.

@@ -224,7 +224,8 @@ This is not on the immediate roadmap (the corpus is currently 8 files and pure v
 
 ## Known Issues & Technical Debt
 
-- `OLLAMA_MODEL` (`ministral-3:3b`) is hardcoded in both `rag.py` and `app.py`/`rag_lc.py`. Centralize it in `config.py`.
-- `CORPUS_DIR` and `CHROMA_DIR` are absolute Windows paths. Replace with `pathlib.Path(__file__).parent.parent / "..."` for cross-platform portability.
-- `chunk_fixed()` in `ingest.py` has no overlap. Add a `step` parameter smaller than `size` to improve retrieval across chunk boundaries.
-- The LangChain chain in `rag_lc.py` and `app.py` does not apply `RELEVANCE_THRESHOLD`. Add a `RunnableLambda` filter to match `rag.py` behavior.
+All previously known technical debt issues have been addressed:
+- ~~`OLLAMA_MODEL` (`ministral-3:3b`) is hardcoded in both `rag.py` and `app.py`/`rag_lc.py`. Centralize it in `config.py`.~~ (Resolved: Centralized `OLLAMA_MODEL` in `config.py` and updated all scripts to reference `cfg.OLLAMA_MODEL`)
+- ~~`CORPUS_DIR` and `CHROMA_DIR` are absolute Windows paths. Replace with `pathlib.Path(__file__).parent.parent / "..."` for cross-platform portability.~~ (Resolved: Updated paths in `config.py` using `pathlib.Path(__file__).parent.parent`)
+- ~~`chunk_fixed()` in `ingest.py` has no overlap. Add a `step` parameter smaller than `size` to improve retrieval across chunk boundaries.~~ (Resolved: Added `step` argument to `chunk_fixed` in `ingest.py` and `FIXED_CHUNK_STEP` config to `config.py`)
+- ~~The LangChain chain in `rag_lc.py` and `app.py` does not apply `RELEVANCE_THRESHOLD`. Add a `RunnableLambda` filter to match `rag.py` behavior.~~ (Resolved: Implemented `RunnableLambda` to filter retrieved chunks by `cfg.RELEVANCE_THRESHOLD` via `similarity_search_with_score` in both `app.py` and `src/rag_lc.py`)
