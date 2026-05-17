@@ -4,5 +4,11 @@
     "collection": "codon_docs",
     "corpus_dir": "data/corpus",
     "description": "Codon Consulting public website content"
+  },
+  "buddhism": {
+    "kb_id": "buddhism",
+    "collection": "buddhism_docs",
+    "corpus_dir": "data/corpus/buddhism",
+    "description": "buddist shit"
   }
 }

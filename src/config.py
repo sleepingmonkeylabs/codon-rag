@@ -27,4 +27,4 @@ FIXED_CHUNK_STEP = 150           # chars — overlap step for fixed chunking
 
 # ── Retrieval ─────────────────────────────────────────────────────────────────
 TOP_K = 5
-RELEVANCE_THRESHOLD = 0.45
+RELEVANCE_THRESHOLD = 0.65

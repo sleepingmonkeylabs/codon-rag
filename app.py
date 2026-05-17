@@ -5,13 +5,13 @@ st.set_page_config(
     page_icon="👋",
 )
 
-st.write("# Welcome to Codon Sales Assistant! 👋")
+st.write("# Welcome to Ask Anything Assistant! 👋")
 
 st.sidebar.success("Select a page above.")
 
 st.markdown(
     """
-    This is the Codon Sales Assistant, powered by local RAG.
+    This is the Ask Anything Assistant, powered by local RAG.
     
     **👈 Select a page from the sidebar** to navigate:
     

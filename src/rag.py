@@ -22,10 +22,7 @@ import config as cfg
 OLLAMA_URL  = "http://127.0.0.1:11434/api/chat"
 OLLAMA_MODEL = cfg.OLLAMA_MODEL
 
-SYSTEM_PROMPT = """You are a helpful assistant that answers questions about Codon Consulting.
-Answer using ONLY the context provided below. Do not use prior knowledge.
-If the context does not contain enough information to answer, say so clearly.
-Be concise. Cite which source document(s) your answer draws from."""
+
 
 
 # ── Registry ──────────────────────────────────────────────────────────────────
@@ -85,11 +82,11 @@ def build_context_block(chunks: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def build_messages(question: str, chunks: list[dict]) -> list[dict]:
+def build_messages(question: str, chunks: list[dict], system_prompt: str) -> list[dict]:
     context = build_context_block(chunks)
     user_content = f"Context:\n{context}\n\nQuestion: {question}"
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user",   "content": user_content},
     ]
 
@@ -141,8 +138,14 @@ def main():
         print("No relevant chunks found in the knowledge base for that question.")
         sys.exit(0)
 
+    description = kb_config.get("description", kb_id)
+    system_prompt = f"""You are a helpful assistant that answers questions about {description}.
+Answer using ONLY the context provided below. Do not use prior knowledge.
+If the context does not contain enough information to answer, say so clearly.
+Be concise. Cite which source document(s) your answer draws from."""
+
     print(f"Calling {OLLAMA_MODEL}...\n")
-    messages = build_messages(question, chunks)
+    messages = build_messages(question, chunks, system_prompt)
     answer = call_ollama(messages)
 
     # ── Output ────────────────────────────────────────────────────────────────

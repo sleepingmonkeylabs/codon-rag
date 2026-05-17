@@ -1,56 +1,59 @@
-# codon-rag
-
-A fully local Retrieval-Augmented Generation (RAG) system that powers a **Codon Sales Assistant** chatbot. Users can ask natural-language questions about [Codon Consulting AB](https://www.codon.se) and receive grounded answers with source citations — no cloud APIs, no API keys.
-
----
+<!-- Section from: c:\Users\DmitriApassov\Documents\codon\codon-rag\CLAUDE.md | Lines: 7-38 -->
 
 ## Architecture Overview
 
 ```
-data/corpus/*.md  →  src/ingest.py  →  ChromaDB (chroma_db/)
-                                              ↓
+data/kb_registry.json (KB config)
+data/corpus/<kb_id>/*.md  →  src/ingest.py (Incremental)  →  ChromaDB (chroma_db/<collection_name>)
+                                               ↓
 User question  →  embed (MiniLM)  →  similarity search (top-K)
-                                              ↓
-                               src/rag.py  or  src/rag_lc.py
-                                              ↓
+                                               ↓
+                                src/rag.py  or  src/rag_lc.py
+                                               ↓
                           Ollama (ministral-3:3b @ localhost:11434)
-                                              ↓
+                                               ↓
                                    Answer + source citations
-                                              ↓
-                              app.py  (Streamlit chat UI)
+                                               ↓
+                              app.py  (Streamlit multipage UI)
 ```
 
 ### Stack
 
 | Layer | Technology |
 |---|---|
-| Corpus | 8 Markdown files in `data/corpus/` |
+| Corpus | Multiple independent knowledge bases configured in `data/kb_registry.json` |
 | Chunking | Paragraph-split (default) or fixed-character |
 | Embeddings | `all-MiniLM-L6-v2` via `sentence-transformers` / `langchain-huggingface` |
-| Vector store | ChromaDB (persistent, cosine distance) |
+| Vector store | ChromaDB (persistent, cosine distance, with rich metadata: `kb_id`, `doc_id`, `file_hash`) |
+| Ingestion | Incremental ingestion natively skipping unchanged files, with surgical file/KB deletion |
 | LLM | Ollama — `ministral-3:3b` running locally at `http://127.0.0.1:11434` |
 | RAG (raw) | `src/rag.py` — plain Python + `urllib`, no framework |
 | RAG (LangChain) | `src/rag_lc.py` — LangChain LCEL chain |
-| UI | `app.py` — Streamlit chat interface |
+| UI | Streamlit multipage app (`app.py` + `pages/1_Knowledge_Bases.py` + `pages/2_Ask.py`) |
 | Tunneling | `ngrok.exe` — expose Streamlit to the internet |
 
 ---
+<!-- Section from: c:\Users\DmitriApassov\Documents\codon\codon-rag\CLAUDE.md | Lines: 39-61 -->
 
 ## Project Layout
 
 ```
 codon-rag/
-├── app.py                  # Streamlit chat UI (uses rag_lc-style chain)
+├── app.py                  # Streamlit entry point (Landing Page)
+├── pages/
+│   ├── 1_Knowledge_Bases.py # KB Management UI
+│   └── 2_Ask.py            # Streamlit chat interface UI
 ├── requirements.txt        # Python dependencies
 ├── ngrok.exe               # ngrok binary for public tunneling
 ├── src/
 │   ├── config.py           # All tunable parameters — edit here first
-│   ├── ingest.py           # Chunk → embed → write to ChromaDB
+│   ├── ingest.py           # Chunk → embed → write to ChromaDB (incremental)
 │   ├── query.py            # CLI retrieval debugger (no LLM)
 │   ├── rag.py              # Full RAG CLI (raw HTTP to Ollama)
 │   └── rag_lc.py           # Full RAG CLI using LangChain
 ├── data/
-│   ├── corpus/             # Source documents (8 .md files)
+│   ├── kb_registry.json    # Registry containing Knowledge Base configs
+│   ├── corpus/             # Source documents for each KB
 │   └── test_questions.txt  # 5 canonical eval questions
 ├── chroma_db/              # Persisted ChromaDB vector store (git-ignored)
 └── notebooks/
@@ -58,149 +61,22 @@ codon-rag/
 ```
 
 ---
+<!-- Section from: c:\Users\DmitriApassov\Documents\codon\codon-rag\CLAUDE.md | Lines: 62-73 -->
 
 ## Quick Commands
 
 ```bash
-python src/ingest.py                    # build / rebuild the vector store
-python src/query.py "question"         # retrieval debug (no LLM)
-python src/rag.py "question"           # full RAG, raw Python
-python src/rag_lc.py "question"       # full RAG, LangChain
-streamlit run app.py                   # chat UI at localhost:8501
+python src/ingest.py --kb codon                   # build / rebuild the vector store incrementally
+python src/ingest.py --kb codon --delete-file f.md # drop a single file's chunks
+python src/ingest.py --kb codon --delete-kb       # drop entire KB and remove from registry
+python src/query.py --kb codon "question"         # retrieval debug (no LLM)
+python src/rag.py --kb codon "question"           # full RAG, raw Python
+python src/rag_lc.py --kb codon "question"        # full RAG, LangChain
+streamlit run app.py                              # open Streamlit UI at localhost:8501
 ```
 
 ---
-
-## Next Steps
-
-The items below are the agreed-upon improvements for the next development phase, ordered roughly by dependency. Complete them in sequence — each one unblocks the next.
-
----
-
-### 1. Better ChromaDB Indexing
-
-**Current state.** Each chunk is stored with only two metadata fields — `source` (filename) and `chunk_index` (integer). There is no stable identifier linking a chunk to the knowledge base it belongs to, and no way to filter or delete by file without a full re-ingest.
-
-**Goal.** Store richer, queryable metadata on every chunk so that retrieval can be scoped and individual documents or entire KBs can be managed surgically.
-
-**Fields to add to every chunk's metadata in `ingest.py`:**
-
-| Field | Type | Description |
-|---|---|---|
-| `kb_id` | `str` | Stable identifier for the knowledge base (e.g. `"codon_kb"`). Enables per-KB filtering and deletion. |
-| `source_file` | `str` | Filename (rename from `source` for clarity). |
-| `source_path` | `str` | Repo-relative path to the source file. |
-| `doc_id` | `str` | Stable hash of `kb_id + filename`. Groups all chunks from one file — essential for file-level deletion. |
-| `chunk_index` | `int` | Position of this chunk within the file (already stored). |
-| `total_chunks` | `int` | Total chunks produced from this file. Useful for completeness checks. |
-| `ingested_at` | `str` | ISO-8601 timestamp of ingestion. |
-
-**Implementation notes.** ChromaDB already supports metadata filtering and deletion — no schema changes are needed. The only change is populating the metadata dict in `ingest.py`. Update `query.py` to print the new fields for visibility during debugging.
-
----
-
-### 2. Multiple Knowledge Bases
-
-**Current state.** There is a single ChromaDB collection (`codon_docs`) and a single corpus directory. Every ingest wipes and recreates this one collection.
-
-**Goal.** Support multiple independent knowledge bases (e.g. one per client, product, or domain) that do not interfere with each other. Users should be able to select which KB to query.
-
-**Proposed design.** Introduce a KB registry at `data/kb_registry.json`:
-
-```json
-{
-  "codon": {
-    "kb_id": "codon",
-    "collection": "codon_docs",
-    "corpus_dir": "data/corpus/codon",
-    "description": "Codon Consulting public website content"
-  },
-  "client_x": {
-    "kb_id": "client_x",
-    "collection": "client_x_docs",
-    "corpus_dir": "data/corpus/client_x",
-    "description": "Client X product documentation"
-  }
-}
-```
-
-**Changes required across the codebase:**
-
-- `config.py` — add `KB_REGISTRY_PATH`; remove the single hardcoded `COLLECTION` and `CORPUS_DIR` (or keep them as defaults for backward compatibility).
-- `ingest.py` — accept `--kb <kb_id>` argument; look up corpus dir and collection name from the registry; write `kb_id` into chunk metadata.
-- `rag.py` / `rag_lc.py` — accept `--kb <kb_id>` to set the target collection.
-- `app.py` — add a sidebar `st.selectbox` listing all registered KBs; pass the selected collection to the chain.
-
-**Cross-KB search (stretch goal).** When the user selects "All", query each collection separately, merge results, re-rank by distance, de-duplicate, then send to the LLM.
-
----
-
-### 3. Deletion Strategy
-
-**Current state.** There is no deletion path. The only way to remove content is a full destructive re-ingest via `ingest.py`.
-
-**Goal.** Support three levels of targeted deletion so content can be removed or updated without rebuilding everything.
-
-**File-level deletion** — remove all chunks from a single source file:
-
-```python
-# ChromaDB supports this natively once doc_id metadata is in place (see §1)
-collection.delete(where={"doc_id": "<hash>"})
-```
-
-Expose this as: `python src/ingest.py --delete-file <filename> [--kb <kb_id>]`
-
-**KB-level deletion** — drop an entire collection:
-
-```python
-client.delete_collection(collection_name)
-# then remove from kb_registry.json
-```
-
-Expose this as: `python src/ingest.py --delete-kb <kb_id>`
-
-**Incremental add** — add new files without a full re-ingest:
-
-Before embedding, check whether a `doc_id` already exists in the collection (`collection.get(where={"doc_id": "..."})`). If found and the file is unchanged (compare a `file_hash` stored in metadata), skip it. If changed, delete the old chunks and re-embed. This removes the need for destructive re-ingest on routine corpus updates.
-
----
-
-### 4. Two-Page Streamlit Frontend
-
-**Current state.** `app.py` is a single-page chat interface with no UI for managing knowledge bases or documents.
-
-**Goal.** Split the UI into two focused pages using Streamlit's multipage app structure:
-
-```
-app.py                         # landing / entry point
-pages/
-├── 1_Knowledge_Bases.py       # KB management
-└── 2_Ask.py                   # chat interface
-```
-
-**Page 1 — Knowledge Bases (`pages/1_Knowledge_Bases.py`)**
-
-This page is for managing what the assistant knows.
-
-- **KB overview table** — list all KBs from `kb_registry.json` with name, description, chunk count (from `collection.count()`), and last ingested timestamp.
-- **Create KB** — a form with KB name, description, and corpus directory; writes to `kb_registry.json` and triggers ingestion.
-- **Add documents** — `st.file_uploader` accepting `.md` or `.txt` files; saves to the KB's corpus directory and runs incremental ingest on just the new files.
-- **Delete document** — selectbox listing files in the active KB; calls file-level deletion (§3).
-- **Delete KB** — confirmation dialog followed by collection drop and registry removal.
-- **Re-ingest KB** — force a full destructive re-ingest of the selected KB's corpus directory.
-
-**Page 2 — Ask (`pages/2_Ask.py`)**
-
-This page is the existing chat interface, extended with KB awareness.
-
-- **KB selector** — `st.sidebar.selectbox` listing all registered KBs; the chain is rebuilt (or retrieved from cache) when the selection changes.
-- **Chat history** — existing `st.chat_message` loop, unchanged.
-- **Retrieved chunks expander** — existing expandable section showing source, distance, and chunk preview.
-- **Clear chat button** — `st.sidebar.button("Clear conversation")` resetting `st.session_state.messages`.
-
-**Caching note.** Use `st.cache_resource` keyed by `kb_id` so switching KBs loads the correct vector store without reloading the embedding model. Cache the embedding model once at the top level since it is KB-agnostic.
-
----
+<!-- Section from: c:\Users\DmitriApassov\Documents\codon\codon-rag\CLAUDE.md | Lines: 205-224 -->
 
 ## Stretch: Hybrid Retrieval (BM25 + Vector + Knowledge Graph)
 
@@ -221,6 +97,7 @@ agentmemory's benchmarks on 240 real-world observations show BM25-only and vecto
 This is not on the immediate roadmap (the corpus is currently 8 files and pure vector retrieval is adequate), but it is the right next retrieval upgrade once the corpus scales or multi-KB queries are introduced.
 
 ---
+<!-- Section from: c:\Users\DmitriApassov\Documents\codon\codon-rag\CLAUDE.md | Lines: 225-231 -->
 
 ## Known Issues & Technical Debt
 
@@ -229,3 +106,25 @@ All previously known technical debt issues have been addressed:
 - ~~`CORPUS_DIR` and `CHROMA_DIR` are absolute Windows paths. Replace with `pathlib.Path(__file__).parent.parent / "..."` for cross-platform portability.~~ (Resolved: Updated paths in `config.py` using `pathlib.Path(__file__).parent.parent`)
 - ~~`chunk_fixed()` in `ingest.py` has no overlap. Add a `step` parameter smaller than `size` to improve retrieval across chunk boundaries.~~ (Resolved: Added `step` argument to `chunk_fixed` in `ingest.py` and `FIXED_CHUNK_STEP` config to `config.py`)
 - ~~The LangChain chain in `rag_lc.py` and `app.py` does not apply `RELEVANCE_THRESHOLD`. Add a `RunnableLambda` filter to match `rag.py` behavior.~~ (Resolved: Implemented `RunnableLambda` to filter retrieved chunks by `cfg.RELEVANCE_THRESHOLD` via `similarity_search_with_score` in both `app.py` and `src/rag_lc.py`)
+## Streamlit & ChromaDB Integration Gotchas
+
+During the development of the multipage UI, several critical issues were encountered regarding the intersection of Streamlit's caching/threading model and ChromaDB's local persistence.
+
+### 1. SQLite Thread-Sharing Crashes
+**Problem:** Streamlit runs on a multi-threaded execution model. By default, `chromadb.PersistentClient` maintains a singleton cache of the SQLite connection in the background. If Streamlit caches the `chromadb` client using `@st.cache_resource`, subsequent user interactions may be routed to a different background thread. When the new thread attempts to query the database, SQLite throws a strict cross-thread violation: `sqlite3.ProgrammingError: SQLite objects created in a thread can only be used in that same thread`.
+**Solution:**
+- Do not cache `Chroma` or `chromadb.PersistentClient` initialization with `@st.cache_resource`. Let Langchain or the script instantiate the connection anew on every Streamlit rerun.
+- Before creating the `Chroma` vectorstore, explicitly clear the Chroma system cache: `chromadb.api.client.SharedSystemClient.clear_system_cache()`. This forces Chroma to create a fresh, thread-safe SQLite connection tied to the current execution thread.
+
+### 2. Silent Failures with Exception Swallowing
+**Problem:** When implementing error handling to prevent the app from crashing on empty collections (e.g., using `try...except Exception:` around `similarity_search_with_score`), it can inadvertently swallow critical database errors like the SQLite thread-sharing crash mentioned above. This leads to the app silently assuming zero chunks were retrieved, causing the LLM to hallucinate or the app to trigger early-exit handlers inappropriately.
+**Solution:** Always log or print the traceback explicitly within broad `except` blocks (`import traceback; traceback.print_exc()`) to ensure underlying database connection issues are visible in the Streamlit terminal.
+
+### 3. Module Hot-Reloading Stagnation
+**Problem:** When updating configuration files (like `src/config.py`) to tune hyperparameters such as `RELEVANCE_THRESHOLD`, Streamlit detects the file change and reruns the UI script. However, standard Python aggressive module caching (`sys.modules`) means that the UI script continues to use the stale values from the initial import, leading to confusing retrieval behavior.
+**Solution:** Explicitly force Python to reload the configuration module at the top of the Streamlit script:
+```python
+import config as cfg
+import importlib
+importlib.reload(cfg)
+```
