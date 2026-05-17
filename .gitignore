@@ -1,1 +1,4 @@
 docs/
+chroma_db/
+ngrok.exe
+src/__pycache__/
