@@ -1,0 +1,8 @@
+{
+  "codon": {
+    "kb_id": "codon",
+    "collection": "codon_docs",
+    "corpus_dir": "data/corpus",
+    "description": "Codon Consulting public website content"
+  }
+}

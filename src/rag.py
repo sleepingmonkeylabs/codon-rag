@@ -10,6 +10,7 @@ import os
 import sys
 import json
 import urllib.request
+import argparse
 
 import chromadb
 from sentence_transformers import SentenceTransformer
@@ -27,24 +28,48 @@ If the context does not contain enough information to answer, say so clearly.
 Be concise. Cite which source document(s) your answer draws from."""
 
 
+# ── Registry ──────────────────────────────────────────────────────────────────
+
+def load_kb_config(kb_id: str) -> dict:
+    if not os.path.exists(cfg.KB_REGISTRY_PATH):
+        print(f"Error: KB registry not found at {cfg.KB_REGISTRY_PATH}")
+        sys.exit(1)
+    with open(cfg.KB_REGISTRY_PATH, "r", encoding="utf-8") as f:
+        registry = json.load(f)
+    if kb_id not in registry:
+        print(f"Error: KB '{kb_id}' not found in registry.")
+        sys.exit(1)
+    return registry[kb_id]
+
+
 # ── Retrieval ─────────────────────────────────────────────────────────────────
 
-def retrieve(question: str, model: SentenceTransformer) -> list[dict]:
+def retrieve(question: str, model: SentenceTransformer, collection_name: str) -> list[dict]:
     q_emb = model.encode([question]).tolist()
     client = chromadb.PersistentClient(path=cfg.CHROMA_DIR)
-    collection = client.get_collection(cfg.COLLECTION)
+    
+    try:
+        collection = client.get_collection(collection_name)
+    except ValueError:
+        print(f"Error: Collection '{collection_name}' does not exist.")
+        sys.exit(1)
+        
     results = collection.query(
         query_embeddings=q_emb,
         n_results=cfg.TOP_K,
         include=["documents", "metadatas", "distances"],
     )
     chunks = []
+    if not results["documents"][0]:
+        return chunks
+        
     for doc, meta, dist in zip(
         results["documents"][0],
         results["metadatas"][0],
         results["distances"][0],
     ):
-        chunks.append({"text": doc, "source": meta["source"], "dist": dist})
+        source = meta.get("source_file", meta.get("source", "unknown"))
+        chunks.append({"text": doc, "source": source, "dist": dist, "meta": meta})
 
     # ── Filter noise ──────────────────────────────────────────────────────────
     chunks = [c for c in chunks if c["dist"] <= cfg.RELEVANCE_THRESHOLD]
@@ -91,22 +116,30 @@ def call_ollama(messages: list[dict]) -> str:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    if len(sys.argv) > 1:
-        question = " ".join(sys.argv[1:])
-    else:
+    parser = argparse.ArgumentParser(description="Query Codon RAG")
+    parser.add_argument("--kb", type=str, default="codon", help="Knowledge base ID")
+    parser.add_argument("question", nargs="*", help="The question to ask")
+    args = parser.parse_args()
+    
+    question = " ".join(args.question)
+    if not question:
         question = input("Question: ").strip()
     if not question:
         sys.exit(1)
+        
+    kb_id = args.kb
+    kb_config = load_kb_config(kb_id)
+    collection_name = kb_config.get("collection", cfg.COLLECTION)
 
     print(f"\nLoading embedding model...")
     model = SentenceTransformer(cfg.EMBED_MODEL)
 
-    print(f"Retrieving top-{cfg.TOP_K} chunks...")
-    chunks = retrieve(question, model)
+    print(f"Retrieving top-{cfg.TOP_K} chunks from KB '{kb_id}'...")
+    chunks = retrieve(question, model, collection_name)
     
     if not chunks:
-     print("No relevant chunks found in the knowledge base for that question.")
-     sys.exit(0)
+        print("No relevant chunks found in the knowledge base for that question.")
+        sys.exit(0)
 
     print(f"Calling {OLLAMA_MODEL}...\n")
     messages = build_messages(question, chunks)
@@ -122,7 +155,12 @@ def main():
         preview = c["text"][:120].replace("\n", " ")
         print(f"  [{i}] dist={c['dist']:.4f}  {c['source']}")
         print(f"       {preview}")
-
+        
+        # Display new metadata fields for visibility (Step 1 requirement)
+        meta = c.get("meta", {})
+        debug_meta = {k: v for k, v in meta.items() if k not in ["source_file", "source"]}
+        if debug_meta:
+             print(f"       meta: {debug_meta}")
 
 if __name__ == "__main__":
     main()

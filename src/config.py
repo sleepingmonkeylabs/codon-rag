@@ -8,6 +8,7 @@ import pathlib
 BASE_DIR = pathlib.Path(__file__).parent.parent
 CORPUS_DIR = str(BASE_DIR / "data" / "corpus")
 CHROMA_DIR = str(BASE_DIR / "chroma_db")
+KB_REGISTRY_PATH = str(BASE_DIR / "data" / "kb_registry.json")
 
 # ── ChromaDB ──────────────────────────────────────────────────────────────────
 COLLECTION = "codon_docs"
