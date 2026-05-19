@@ -84,9 +84,8 @@ def build_context_block(chunks: list[dict]) -> str:
 
 def build_messages(question: str, chunks: list[dict], system_prompt: str) -> list[dict]:
     context = build_context_block(chunks)
-    user_content = f"Context:\n{context}\n\nQuestion: {question}"
+    user_content = f"{system_prompt}\n\nContext:\n{context}\n\nQuestion: {question}"
     return [
-        {"role": "system", "content": system_prompt},
         {"role": "user",   "content": user_content},
     ]
 
@@ -105,9 +104,20 @@ def call_ollama(messages: list[dict]) -> str:
         data=payload,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        data = json.loads(resp.read())
-    return data["message"]["content"]
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read())
+        return data["message"]["content"]
+    except urllib.error.HTTPError as e:
+        print(f"\nError: Ollama API returned HTTP {e.code}: {e.reason}")
+        print(f"This usually means the model '{OLLAMA_MODEL}' is missing, corrupted, or unsupported.")
+        try:
+            err_details = json.loads(e.read())
+            if "error" in err_details:
+                print(f"Details: {err_details['error']}")
+        except:
+            pass
+        sys.exit(1)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

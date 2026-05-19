@@ -696,8 +696,7 @@ def ask(body: AskRequest):
             context = "\n\n".join(context_lines)
 
             messages = [
-                {"role": "system", "content": system},
-                {"role": "user",   "content": f"Context:\n{context}\n\nQuestion: {body.question}"},
+                {"role": "user",   "content": f"{system}\n\nContext:\n{context}\n\nQuestion: {body.question}"},
             ]
 
             payload = json.dumps({

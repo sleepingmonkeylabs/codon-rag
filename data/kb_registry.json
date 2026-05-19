@@ -9,6 +9,18 @@
     "kb_id": "buddhism",
     "collection": "buddhism_docs",
     "corpus_dir": "data/corpus/buddhism",
-    "description": "buddist shit"
+    "description": "buddist shit",
+    "build": {
+      "embed_model": "all-MiniLM-L6-v2",
+      "chunk_strategy": "paragraph",
+      "chunk_size": null,
+      "chunk_step": null,
+      "distance": "cosine",
+      "top_k": 5,
+      "threshold": 0.65,
+      "built_at": "2026-05-19T21:49:34.988610+00:00",
+      "total_chunks": 529,
+      "sources": 6
+    }
   }
 }

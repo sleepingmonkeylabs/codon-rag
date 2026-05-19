@@ -2,3 +2,4 @@ docs/
 chroma_db/
 src/__pycache__/
 ngrok.exe
+workbench/__pycache__
