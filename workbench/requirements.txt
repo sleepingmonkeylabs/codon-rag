@@ -1,0 +1,19 @@
+# workbench/requirements.txt
+# Additional dependencies for the FastAPI workbench UI.
+# Install into the same environment as the main requirements.txt:
+#
+#   pip install -r requirements.txt
+#   pip install -r workbench/requirements.txt
+#
+# (All embedding / ChromaDB / LangChain deps come from the main file.)
+
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+
+# ── ASGI server ───────────────────────────────────────────────────────────────
+# [standard] pulls in uvloop + httptools for better performance on Linux/Mac
+uvicorn[standard]>=0.30.0
+
+# ── File upload support ───────────────────────────────────────────────────────
+# Required by FastAPI to handle multipart/form-data (UploadFile)
+python-multipart>=0.0.9

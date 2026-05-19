@@ -1,0 +1,1681 @@
+<!DOCTYPE html>
+<!--
+  workbench/static/index.html
+  ===========================
+  Single-page application for the codon-rag Workbench.
+  Served by FastAPI at http://localhost:8000/
+
+  Two pages (tabs, no router):
+    1. Build KB — upload corpus files, configure chunking, run ingest, view manifest.
+    2. Ask      — select a KB, chat with streaming RAG answers, inspect retrieved chunks.
+
+  All data comes from the FastAPI backend via fetch() + SSE (Server-Sent Events).
+  No external JS framework — vanilla ES2020 + CSS custom properties.
+-->
+<html data-theme="dark" lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>codon/rag workbench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+/* ── Reset ───────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Dark theme (default) ────────────────────────────────────────────────── */
+:root {
+  --bg:      #0d0f0e;
+  --surface: #141714;
+  --panel:   #1a1e1b;
+  --border:  #2a2f2b;
+  --border2: #343b35;
+  --text:    #d4dbd5;
+  --muted:   #6b7a6c;
+  --accent:  #7eca8f;
+  --accent2: #4a9b5e;
+  --warn:    #e2a84b;
+  --danger:  #e06b6b;
+  --mono:    'IBM Plex Mono', monospace;
+  --sans:    'IBM Plex Sans', sans-serif;
+}
+
+/* ── Light theme override ────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:      #f0f4f1;
+  --surface: #ffffff;
+  --panel:   #e8ede9;
+  --border:  #c8d4c9;
+  --border2: #a8b8a9;
+  --text:    #1a1e1b;
+  --muted:   #5a6b5c;
+  --accent:  #2d8b4e;
+  --accent2: #1f6b3a;
+  --warn:    #8a5b10;
+  --danger:  #b03030;
+}
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  height: 52px;
+  padding: 0 20px;
+  gap: 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.logo {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: .02em;
+  flex-shrink: 0;
+}
+.logo span { color: var(--muted); font-weight: 400; }
+
+/* Nav tabs */
+.nav { display: flex; gap: 2px; }
+.nav-tab {
+  padding: 6px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  letter-spacing: .03em;
+  transition: all .15s;
+}
+.nav-tab:hover { color: var(--text); background: var(--panel); }
+.nav-tab.active {
+  color: var(--accent);
+  background: rgba(126,202,143,.08);
+  border-color: rgba(126,202,143,.25);
+}
+.nav-tab .num {
+  display: inline-block;
+  width: 16px; height: 16px;
+  line-height: 16px;
+  text-align: center;
+  font-size: 10px;
+  border-radius: 2px;
+  background: var(--border);
+  margin-right: 5px;
+}
+.nav-tab.active .num { background: rgba(126,202,143,.2); color: var(--accent); }
+
+/* Ollama status pill */
+.status-pill {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent2);
+  box-shadow: 0 0 6px var(--accent2);
+  animation: pulse 2s infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* Theme toggle button */
+.theme-btn {
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 8px;
+  flex-shrink: 0;
+  transition: all .15s;
+}
+.theme-btn:hover { color: var(--text); border-color: var(--accent2); }
+
+/* ── Page visibility ─────────────────────────────────────────────────────── */
+.page { display: none; }
+.page.active { display: flex; }
+
+/* ── Shared component styles ─────────────────────────────────────────────── */
+.section-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* Form controls */
+select, input[type=text], input[type=number] {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 7px 10px;
+  outline: none;
+  width: 100%;
+  transition: border-color .15s;
+  -webkit-appearance: none;
+}
+select:focus, input:focus { border-color: var(--accent2); }
+
+/* Knobs grid */
+.knobs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.knob-full { grid-column: 1 / -1; }
+.knob { display: flex; flex-direction: column; gap: 5px; }
+.knob-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: .06em;
+}
+
+/* Badges */
+.badge      { float: right; background: rgba(126,202,143,.12); color: var(--accent); padding: 1px 5px; border-radius: 2px; font-size: 9px; }
+.warn-badge { float: right; background: rgba(226,168,75,.12);  color: var(--warn);   padding: 1px 5px; border-radius: 2px; font-size: 9px; }
+
+/* Sliders */
+.slider-row { display: flex; align-items: center; gap: 10px; }
+input[type=range] { flex: 1; accent-color: var(--accent); padding: 0; border: none; background: transparent; cursor: pointer; }
+.slider-val { font-family: var(--mono); font-size: 11px; color: var(--accent); min-width: 36px; text-align: right; }
+
+/* Strategy toggle */
+.strategy-toggle { display: flex; gap: 4px; }
+.strategy-btn {
+  flex: 1;
+  padding: 7px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: center;
+  transition: all .15s;
+}
+.strategy-btn.active {
+  background: rgba(126,202,143,.1);
+  border-color: var(--accent2);
+  color: var(--accent);
+}
+
+/* Model note */
+.model-note { font-family: var(--mono); font-size: 9px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+.cached     { color: var(--accent2); }
+.remote     { color: var(--warn); }
+
+/* ── Build page layout ───────────────────────────────────────────────────── */
+.build-layout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  height: calc(100vh - 52px);
+  width: 100%;
+}
+.build-main {
+  padding: 24px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.build-side {
+  padding: 20px;
+  overflow-y: auto;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Dropzone */
+.dropzone {
+  border: 1.5px dashed var(--border2);
+  border-radius: 6px;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  background: var(--panel);
+  transition: all .2s;
+}
+.dropzone:hover, .dropzone.drag-over {
+  border-color: var(--accent2);
+  background: rgba(126,202,143,.05);
+}
+.dropzone-icon {
+  width: 38px; height: 38px;
+  border: 1.5px solid var(--border2);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: var(--surface);
+}
+.dropzone-label { font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: center; }
+.dropzone-label strong { color: var(--accent); display: block; margin-bottom: 2px; }
+
+/* File list */
+.file-list { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 11px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.file-icon  { color: var(--accent2); flex-shrink: 0; }
+.file-name  { color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-size  { color: var(--muted); flex-shrink: 0; }
+.file-remove {
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.file-remove:hover { color: var(--danger); background: rgba(224,107,107,.1); }
+.file-empty { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 8px 0; }
+
+/* Build button */
+.build-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--accent2);
+  color: #0d0f0e;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: .04em;
+  transition: all .2s;
+  margin-top: 4px;
+}
+.build-btn:hover:not(:disabled) { background: var(--accent); }
+.build-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+/* Build log (SSE progress output) */
+.build-log {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.7;
+  max-height: 180px;
+  overflow-y: auto;
+  display: none;   /* shown when build starts */
+}
+.log-progress { color: var(--muted); }
+.log-done     { color: var(--accent); }
+.log-error    { color: var(--danger); }
+
+/* Build warning */
+.build-warning {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--warn);
+  text-align: center;
+  line-height: 1.5;
+  padding: 6px;
+  background: rgba(226,168,75,.06);
+  border: 1px solid rgba(226,168,75,.2);
+  border-radius: 4px;
+}
+
+/* Manifest card */
+.manifest-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.manifest-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.manifest-age    { font-size: 10px; color: var(--muted); margin-left: auto; }
+.manifest-row    { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
+.manifest-row:last-child { border-bottom: none; }
+.manifest-row .val { color: var(--accent2); }
+.manifest-row .val.warn { color: var(--warn); }
+.kb-id-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9px;
+  background: rgba(126,202,143,.1);
+  color: var(--accent2);
+  border: 1px solid rgba(126,202,143,.2);
+  border-radius: 2px;
+  padding: 2px 6px;
+  letter-spacing: .04em;
+}
+
+/* New KB form */
+.new-kb-form {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  display: none;   /* toggled by JS */
+}
+.new-kb-form.visible { display: flex; }
+.new-kb-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.create-kb-btn {
+  padding: 8px 16px;
+  background: var(--accent2);
+  color: #0d0f0e;
+  border: none;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background .15s;
+}
+.create-kb-btn:hover { background: var(--accent); }
+
+/* ── Ask page layout ─────────────────────────────────────────────────────── */
+.ask-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr 320px;
+  height: calc(100vh - 52px);
+  width: 100%;
+}
+
+/* Ask left sidebar */
+.ask-left {
+  border-right: 1px solid var(--border);
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: var(--surface);
+  overflow-y: auto;
+}
+.kb-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 11px 12px;
+  cursor: pointer;
+  transition: all .15s;
+  margin-bottom: 5px;
+}
+.kb-card.selected { border-color: var(--accent2); background: rgba(126,202,143,.05); }
+.kb-card:hover:not(.selected) { border-color: var(--border2); }
+.kb-card-name { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+.kb-meta { font-family: var(--mono); font-size: 10px; color: var(--muted); line-height: 1.75; }
+.kb-meta .val { color: var(--accent2); }
+.kb-unbuilt { font-family: var(--mono); font-size: 9px; color: var(--warn); margin-top: 4px; }
+
+/* Chat area */
+.chat-area {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 52px);
+  overflow: hidden;
+}
+.chat-header {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.chat-header-title { font-family: var(--mono); font-size: 12px; color: var(--text); font-weight: 500; }
+.model-chip {
+  font-family: var(--mono); font-size: 10px;
+  background: rgba(226,168,75,.1); color: var(--warn);
+  border: 1px solid rgba(226,168,75,.25); border-radius: 3px; padding: 2px 7px;
+}
+.kb-chip {
+  font-family: var(--mono); font-size: 10px;
+  background: rgba(126,202,143,.1); color: var(--accent2);
+  border: 1px solid rgba(126,202,143,.2); border-radius: 3px; padding: 2px 7px;
+  margin-left: auto;
+}
+
+.chat-messages { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.msg { max-width: 700px; font-size: 13px; line-height: 1.6; }
+.msg.user {
+  align-self: flex-end;
+  background: rgba(126,202,143,.08);
+  border: 1px solid rgba(126,202,143,.2);
+  border-radius: 6px 6px 2px 6px;
+  padding: 9px 13px;
+}
+.msg.assistant {
+  align-self: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 2px 6px 6px 6px;
+  padding: 9px 13px;
+}
+.msg-meta  { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+.role-user { color: var(--accent2); }
+.role-bot  { color: var(--warn); }
+
+/* Blinking cursor during token streaming */
+.cursor { animation: blink .8s step-start infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.chat-input-row {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  background: var(--surface);
+}
+.chat-input {
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 8px 11px;
+  outline: none;
+  resize: none;
+  transition: border-color .15s;
+}
+.chat-input:focus { border-color: var(--accent2); }
+.send-btn {
+  padding: 8px 16px;
+  background: var(--accent2);
+  color: #0d0f0e;
+  border: none;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-end;
+  transition: background .15s;
+}
+.send-btn:hover:not(:disabled) { background: var(--accent); }
+.send-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Retrieval panel */
+.retrieval-panel {
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  overflow: hidden;
+}
+.retrieval-header {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chunk-count {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--accent2);
+  margin-left: auto;
+}
+.retrieval-list { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 7px; }
+
+.chunk-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 9px 11px;
+  transition: border-color .15s;
+  cursor: default;
+}
+.chunk-card:hover { border-color: var(--border2); }
+.chunk-top { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.chunk-rank {
+  font-family: var(--mono);
+  font-size: 10px;
+  width: 18px; height: 18px;
+  border-radius: 2px;
+  background: rgba(126,202,143,.1);
+  color: var(--accent2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.chunk-source { font-family: var(--mono); font-size: 10px; color: var(--accent2); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dist-bar-wrap { display: flex; align-items: center; gap: 5px; }
+.dist-bar { height: 3px; border-radius: 2px; background: var(--border); width: 50px; position: relative; flex-shrink: 0; }
+.dist-bar-fill { height: 100%; border-radius: 2px; background: var(--accent2); position: absolute; left: 0; top: 0; }
+.dist-val { font-family: var(--mono); font-size: 9px; color: var(--muted); white-space: nowrap; }
+.chunk-preview {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.5;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- TOP BAR                                                                 -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="topbar">
+  <div class="logo">codon<span>/</span>rag <span>workbench</span></div>
+
+  <nav class="nav">
+    <button class="nav-tab active" onclick="showPage('build', this)">
+      <span class="num">1</span>Build KB
+    </button>
+    <button class="nav-tab" onclick="showPage('ask', this)">
+      <span class="num">2</span>Ask
+    </button>
+  </nav>
+
+  <!-- Ollama online/offline status — populated by loadOllamaModels() -->
+  <div class="status-pill" id="ollama-status">
+    <div class="dot"></div>connecting...
+  </div>
+
+  <!-- Light / dark toggle — persists via localStorage -->
+  <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark">☀</button>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- PAGE 1: BUILD KB                                                        -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page active" id="page-build">
+  <div class="build-layout">
+
+    <!-- ── LEFT: corpus files + chunking params ────────────────────────── -->
+    <div class="build-main">
+
+      <!-- KB Selector -->
+      <div>
+        <div class="section-label">Knowledge Base</div>
+        <div class="knob">
+          <select id="build-kb-select" onchange="onBuildKBChange()">
+            <option value="">— select a KB —</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- New KB form (shown when "New KB..." is selected) -->
+      <div class="new-kb-form" id="new-kb-form">
+        <div class="section-label" style="margin-bottom:2px">New Knowledge Base</div>
+        <div class="new-kb-row">
+          <div class="knob">
+            <div class="knob-label">KB ID (letters, digits, _)</div>
+            <input type="text" id="new-kb-id" placeholder="e.g. product_docs">
+          </div>
+          <div class="knob">
+            <div class="knob-label">Description (optional)</div>
+            <input type="text" id="new-kb-desc" placeholder="What this KB contains">
+          </div>
+        </div>
+        <button class="create-kb-btn" onclick="createKB()">+ Create KB</button>
+      </div>
+
+      <!-- Corpus files (hidden until a KB is selected) -->
+      <div id="corpus-section" style="display:none">
+
+        <!-- Dropzone -->
+        <div>
+          <div class="section-label" style="display:flex;justify-content:space-between">
+            <span>Source Documents</span>
+            <span id="corpus-dir-label" style="color:var(--border2);font-size:9px;font-weight:400;letter-spacing:0;text-transform:none"></span>
+          </div>
+          <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+            <div class="dropzone-icon">📄</div>
+            <div class="dropzone-label">
+              <strong>Drop files here or click to browse</strong>
+              .md · .txt files only
+            </div>
+          </div>
+          <!-- Hidden file input triggered by dropzone click -->
+          <input type="file" id="file-input" accept=".md,.txt" multiple style="display:none">
+        </div>
+
+        <!-- Queued / uploaded files -->
+        <div>
+          <div class="section-label" style="display:flex;justify-content:space-between">
+            <span>Corpus Files</span>
+            <span id="file-count" style="color:var(--muted);font-weight:400;letter-spacing:0;text-transform:none"></span>
+          </div>
+          <div class="file-list" id="file-list">
+            <div class="file-empty">No files yet — upload some documents above</div>
+          </div>
+        </div>
+
+      </div><!-- /corpus-section -->
+
+      <!-- Chunking knobs -->
+      <div>
+        <div class="section-label">Chunking</div>
+        <div class="knobs-grid">
+
+          <div class="knob knob-full">
+            <div class="knob-label">Strategy</div>
+            <div class="strategy-toggle">
+              <button class="strategy-btn active" data-strategy="paragraph" onclick="setStrategy(this)">paragraph</button>
+              <button class="strategy-btn"         data-strategy="fixed"     onclick="setStrategy(this)">fixed chars</button>
+            </div>
+          </div>
+
+          <!-- Chunk size — only active for "fixed" strategy -->
+          <div class="knob" id="knob-size" style="opacity:.35;pointer-events:none">
+            <div class="knob-label">Chunk Size (chars)</div>
+            <div class="slider-row">
+              <input type="range" id="chunk-size-slider" min="100" max="1000" value="200"
+                     oninput="document.getElementById('chunk-size-val').textContent=this.value">
+              <div class="slider-val" id="chunk-size-val">200</div>
+            </div>
+          </div>
+
+          <div class="knob">
+            <div class="knob-label">Overlap (chars) <span class="badge">step</span></div>
+            <div class="slider-row">
+              <input type="range" id="overlap-slider" min="0" max="300" value="50"
+                     oninput="document.getElementById('overlap-val').textContent=this.value">
+              <div class="slider-val" id="overlap-val">50</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Retrieval index params -->
+      <div>
+        <div class="section-label">Retrieval Index</div>
+        <div class="knobs-grid">
+
+          <div class="knob">
+            <div class="knob-label">Distance Metric</div>
+            <select id="distance-select">
+              <option value="cosine" selected>cosine</option>
+              <option value="l2">l2</option>
+              <option value="ip">ip (inner product)</option>
+            </select>
+          </div>
+
+          <div class="knob">
+            <div class="knob-label">Default Top-K</div>
+            <div class="slider-row">
+              <input type="range" id="topk-slider" min="1" max="20" value="5"
+                     oninput="document.getElementById('topk-val').textContent=this.value">
+              <div class="slider-val" id="topk-val">5</div>
+            </div>
+          </div>
+
+          <div class="knob knob-full">
+            <div class="knob-label">Relevance Threshold (lower = stricter)</div>
+            <div class="slider-row">
+              <input type="range" id="threshold-slider" min="0" max="100" value="65"
+                     oninput="document.getElementById('threshold-val').textContent=(this.value/100).toFixed(2)">
+              <div class="slider-val" id="threshold-val">0.65</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /build-main -->
+
+    <!-- ── RIGHT: embedding model, LLM, build button, log, manifest ────── -->
+    <div class="build-side">
+
+      <!-- Embedding model selector -->
+      <div>
+        <div class="section-label">Embedding Model</div>
+        <div class="knob">
+          <div class="knob-label">Model <span class="warn-badge">re-ingest on change</span></div>
+          <select id="embed-select" onchange="updateEmbedNote()">
+            <option value="all-MiniLM-L6-v2"              data-dim="384" data-size="~80 MB"  data-cached="true">all-MiniLM-L6-v2</option>
+            <option value="all-mpnet-base-v2"              data-dim="768" data-size="~420 MB" data-cached="false">all-mpnet-base-v2</option>
+            <option value="multi-qa-MiniLM-L6-cos-v1"     data-dim="384" data-size="~80 MB"  data-cached="false">multi-qa-MiniLM-L6-cos-v1</option>
+            <option value="all-distilroberta-v1"           data-dim="768" data-size="~290 MB" data-cached="false">all-distilroberta-v1</option>
+            <option value="BAAI/bge-small-en-v1.5"         data-dim="384" data-size="~130 MB" data-cached="false">BAAI/bge-small-en-v1.5</option>
+            <option value="__custom__">+ custom HuggingFace model...</option>
+          </select>
+          <div class="model-note" id="embed-note">
+            dim: <span style="color:var(--text)">384</span> · ~80 MB · <span class="cached">✓ cached locally</span>
+          </div>
+        </div>
+        <!-- Custom model name input (hidden until "custom" is selected) -->
+        <div id="custom-embed-wrap" style="display:none;margin-top:8px" class="knob">
+          <div class="knob-label">HuggingFace model path</div>
+          <input type="text" id="custom-embed-input" placeholder="e.g. intfloat/e5-small-v2">
+          <div class="model-note"><span class="remote">⬇ downloads on first ingest — must be SentenceTransformers-compatible</span></div>
+        </div>
+      </div>
+
+      <!-- LLM model (from Ollama) -->
+      <div>
+        <div class="section-label">LLM (Ollama)</div>
+        <div class="knob">
+          <div class="knob-label">Model</div>
+          <select id="llm-model-select">
+            <option>ministral-3:3b</option>
+          </select>
+          <div class="model-note" id="ollama-model-note">querying GET /api/tags...</div>
+        </div>
+      </div>
+
+      <!-- Build section -->
+      <div>
+        <div class="section-label">Build</div>
+        <div class="build-warning">⚠ Ingest drops &amp; recreates the collection — all existing chunks are replaced</div>
+        <button class="build-btn" id="build-btn" onclick="buildKB()">▶ Build Knowledge Base</button>
+        <!-- SSE progress log — hidden until build starts -->
+        <div class="build-log" id="build-log"></div>
+      </div>
+
+      <!-- Last build manifest -->
+      <div>
+        <div class="section-label">Last Build — Manifest</div>
+        <div class="manifest-card" id="manifest-card">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:8px 0">
+            Select a KB to see its manifest
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /build-side -->
+  </div><!-- /build-layout -->
+</div><!-- /page-build -->
+
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- PAGE 2: ASK                                                             -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page" id="page-ask">
+  <div class="ask-layout">
+
+    <!-- ── LEFT: KB selector + model + retrieval params ──────────────────── -->
+    <div class="ask-left">
+
+      <div>
+        <div class="section-label">Knowledge Base</div>
+        <div id="kb-cards">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted)">
+            Loading KBs...
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-label">Model</div>
+        <div class="knob">
+          <select id="ask-model-select" onchange="updateChatHeader()">
+            <option>ministral-3:3b</option>
+          </select>
+          <div class="model-note">from GET /api/tags · local only</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-label">Retrieval</div>
+        <div class="knob">
+          <div class="knob-label">Top-K</div>
+          <div class="slider-row">
+            <input type="range" id="ask-topk-slider" min="1" max="20" value="5"
+                   oninput="document.getElementById('ask-topk-val').textContent=this.value">
+            <div class="slider-val" id="ask-topk-val">5</div>
+          </div>
+        </div>
+        <div class="knob" style="margin-top:10px">
+          <div class="knob-label">Relevance Threshold</div>
+          <div class="slider-row">
+            <input type="range" id="ask-threshold-slider" min="0" max="100" value="65"
+                   oninput="document.getElementById('ask-threshold-val').textContent=(this.value/100).toFixed(2)">
+            <div class="slider-val" id="ask-threshold-val">0.65</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /ask-left -->
+
+    <!-- ── CENTER: Chat ────────────────────────────────────────────────── -->
+    <div class="chat-area">
+      <div class="chat-header">
+        <div class="chat-header-title">RAG Chat</div>
+        <div class="model-chip" id="chat-model-chip">ministral-3:3b</div>
+        <div class="kb-chip"    id="chat-kb-chip">—</div>
+      </div>
+      <div class="chat-messages" id="chat-messages">
+        <!-- Messages appended here by JS -->
+      </div>
+      <div class="chat-input-row">
+        <textarea class="chat-input" id="chat-input" rows="2"
+                  placeholder="Ask a question about your KB... (Enter to send, Shift+Enter for newline)"></textarea>
+        <button class="send-btn" id="send-btn" onclick="sendMessage()">Send ↵</button>
+      </div>
+    </div><!-- /chat-area -->
+
+    <!-- ── RIGHT: Retrieved chunks ──────────────────────────────────────── -->
+    <div class="retrieval-panel">
+      <div class="retrieval-header">
+        Retrieved Chunks
+        <span class="chunk-count" id="chunk-count">—</span>
+      </div>
+      <div class="retrieval-list" id="retrieval-list">
+        <div style="padding:16px;font-family:var(--mono);font-size:11px;color:var(--muted)">
+          Chunks from the last query appear here
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /ask-layout -->
+</div><!-- /page-ask -->
+
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- JAVASCRIPT                                                              -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<script>
+
+// ─── State ────────────────────────────────────────────────────────────────
+// All mutable UI state lives here so functions can share it without globals.
+const state = {
+  kbs:          [],        // [{kb_id, description, build, chunk_count, ...}] from /api/kbs
+  buildKbId:    null,      // currently selected KB on the Build page
+  askKbId:      null,      // currently selected KB on the Ask page
+  ollamaModels: [],        // model name strings from /api/ollama/models
+  theme:        localStorage.getItem('wb-theme') || 'dark',
+  generating:   false,     // true while an /api/ask SSE is in flight
+};
+
+// ─── Theme ────────────────────────────────────────────────────────────────
+
+function toggleTheme() {
+  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  applyTheme();
+}
+
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', state.theme);
+  localStorage.setItem('wb-theme', state.theme);
+  // ☀ in dark mode = "switch to light", ☾ in light mode = "switch to dark"
+  document.getElementById('theme-btn').textContent = state.theme === 'dark' ? '☀' : '☾';
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+
+async function init() {
+  applyTheme();
+  // Kick both fetches in parallel — Ollama polling is independent of KB data.
+  await Promise.all([loadKBs(), loadOllamaModels()]);
+}
+
+// ─── Page navigation ──────────────────────────────────────────────────────
+
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ─── Data: load all KBs from API ─────────────────────────────────────────
+
+async function loadKBs() {
+  try {
+    const resp = await fetch('/api/kbs');
+    if (!resp.ok) throw new Error(await resp.text());
+    state.kbs = await resp.json();
+  } catch (e) {
+    console.error('Failed to load KBs:', e);
+    state.kbs = [];
+  }
+  renderBuildKBSelect();
+  renderAskKBCards();
+}
+
+// ─── Data: load Ollama models ─────────────────────────────────────────────
+
+async function loadOllamaModels() {
+  try {
+    const resp = await fetch('/api/ollama/models');
+    const data = await resp.json();
+    state.ollamaModels = data.models || [];
+
+    // Update the status pill in the topbar
+    const pill = document.getElementById('ollama-status');
+    if (data.online) {
+      const modelName = data.models[0] || 'ollama';
+      pill.innerHTML = `<div class="dot"></div>${modelName}`;
+    } else {
+      pill.innerHTML = `<div class="dot" style="background:var(--danger);box-shadow:0 0 6px var(--danger)"></div>ollama offline`;
+    }
+
+    // Populate model dropdowns on both Build and Ask pages
+    ['llm-model-select', 'ask-model-select'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel || state.ollamaModels.length === 0) return;
+      const prev = sel.value;
+      sel.innerHTML = state.ollamaModels
+        .map(m => `<option value="${m}" ${m === prev ? 'selected' : ''}>${m}</option>`)
+        .join('');
+      // If previous value is gone, fall back to first model
+      if (!sel.value) sel.value = state.ollamaModels[0];
+    });
+
+    // Reflect model in chat header
+    updateChatHeader();
+
+    // Update the Ollama note under the LLM selector on Build page
+    const note = document.getElementById('ollama-model-note');
+    if (note) {
+      note.innerHTML = data.online
+        ? `from GET /api/tags · <span class="cached">✓ ${state.ollamaModels.length} model(s) available</span>`
+        : `<span class="remote">⚠ Ollama not reachable at localhost:11434</span>`;
+    }
+  } catch (e) {
+    console.error('Failed to load Ollama models:', e);
+  }
+}
+
+// ─── Build page: KB selector ──────────────────────────────────────────────
+
+function renderBuildKBSelect() {
+  const sel = document.getElementById('build-kb-select');
+  const prev = sel.value;
+
+  // Rebuild option list: existing KBs + "New KB..." sentinel at the end
+  sel.innerHTML = '<option value="">— select a KB —</option>';
+  state.kbs.forEach(kb => {
+    const opt = document.createElement('option');
+    opt.value = kb.kb_id;
+    opt.textContent = `${kb.kb_id}${kb.description ? '  —  ' + kb.description : ''}`;
+    sel.appendChild(opt);
+  });
+  sel.innerHTML += '<option value="__new__">+ New KB...</option>';
+
+  // Restore previous selection if still valid, else default to first KB
+  if (prev && prev !== '__new__' && state.kbs.find(k => k.kb_id === prev)) {
+    sel.value = prev;
+  } else if (state.kbs.length > 0 && !state.buildKbId) {
+    sel.value = state.kbs[0].kb_id;
+  }
+
+  // Trigger the change handler so files + manifest load
+  if (sel.value && sel.value !== '__new__') {
+    state.buildKbId = sel.value;
+    loadBuildKBData();
+  }
+}
+
+// Called when the KB dropdown changes
+async function onBuildKBChange() {
+  const val = document.getElementById('build-kb-select').value;
+
+  if (val === '__new__') {
+    // Show "New KB" creation form, hide corpus section
+    document.getElementById('new-kb-form').classList.add('visible');
+    document.getElementById('corpus-section').style.display = 'none';
+    state.buildKbId = null;
+    renderManifestCard(null, null);  // clear manifest
+    return;
+  }
+
+  // Hide new-KB form, show corpus section
+  document.getElementById('new-kb-form').classList.remove('visible');
+
+  if (!val) {
+    document.getElementById('corpus-section').style.display = 'none';
+    state.buildKbId = null;
+    renderManifestCard(null, null);
+    return;
+  }
+
+  state.buildKbId = val;
+  document.getElementById('corpus-section').style.display = 'block';
+  await loadBuildKBData();
+}
+
+// Load files + manifest for the currently selected build KB
+async function loadBuildKBData() {
+  if (!state.buildKbId) return;
+  await loadBuildFiles();
+
+  const kb = state.kbs.find(k => k.kb_id === state.buildKbId);
+  renderManifestCard(kb?.build || null, kb?.chunk_count || 0);
+
+  // Show the corpus directory path as a hint
+  if (kb) {
+    document.getElementById('corpus-dir-label').textContent = kb.corpus_dir;
+  }
+}
+
+// ─── Build page: file list ────────────────────────────────────────────────
+
+async function loadBuildFiles() {
+  if (!state.buildKbId) return;
+  try {
+    const resp = await fetch(`/api/kbs/${state.buildKbId}/files`);
+    const files = await resp.json();
+    renderFileList(files);
+  } catch (e) {
+    console.error('Failed to load files:', e);
+  }
+}
+
+function renderFileList(files) {
+  const el   = document.getElementById('file-list');
+  const cnt  = document.getElementById('file-count');
+  cnt.textContent = files.length > 0 ? `${files.length} file${files.length !== 1 ? 's' : ''}` : '';
+
+  if (files.length === 0) {
+    el.innerHTML = '<div class="file-empty">No files yet — upload some documents above</div>';
+    return;
+  }
+
+  el.innerHTML = files.map(f => `
+    <div class="file-item">
+      <span class="file-icon">◆</span>
+      <span class="file-name">${escHtml(f.name)}</span>
+      <span class="file-size">${fmtSize(f.size)}</span>
+      <span class="file-remove" onclick="deleteCorpusFile('${escAttr(f.name)}')" title="Remove from corpus">✕</span>
+    </div>
+  `).join('');
+}
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+async function deleteCorpusFile(filename) {
+  if (!confirm(`Remove "${filename}" from corpus?\n(The KB will need to be rebuilt.)`)) return;
+  const resp = await fetch(
+    `/api/kbs/${state.buildKbId}/files/${encodeURIComponent(filename)}`,
+    { method: 'DELETE' }
+  );
+  if (!resp.ok) {
+    alert(`Failed to delete: ${(await resp.json()).detail}`);
+    return;
+  }
+  await loadBuildFiles();
+}
+
+// ─── Build page: file upload ──────────────────────────────────────────────
+
+async function uploadFiles(files) {
+  if (!state.buildKbId) { alert('Select a KB first'); return; }
+  if (!files || files.length === 0) return;
+
+  for (const file of files) {
+    const fd = new FormData();
+    fd.append('file', file);
+    const resp = await fetch(`/api/kbs/${state.buildKbId}/files`, {
+      method: 'POST',
+      body: fd,
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      alert(`Failed to upload "${file.name}": ${err.detail}`);
+    }
+  }
+  await loadBuildFiles();
+}
+
+// ─── Build page: New KB creation ─────────────────────────────────────────
+
+async function createKB() {
+  const id   = document.getElementById('new-kb-id').value.trim();
+  const desc = document.getElementById('new-kb-desc').value.trim();
+
+  if (!id) { alert('KB ID is required'); return; }
+  // Only allow safe identifiers (avoids path traversal in corpus_dir)
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+    alert('KB ID may only contain letters, digits, underscores, and hyphens');
+    return;
+  }
+
+  const resp = await fetch('/api/kbs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kb_id: id, description: desc }),
+  });
+
+  if (!resp.ok) {
+    alert((await resp.json()).detail || 'Failed to create KB');
+    return;
+  }
+
+  // Clear form
+  document.getElementById('new-kb-id').value   = '';
+  document.getElementById('new-kb-desc').value = '';
+
+  // Reload KB list, switch selector to the new KB
+  await loadKBs();
+  const sel = document.getElementById('build-kb-select');
+  sel.value = id;
+  onBuildKBChange();
+}
+
+// ─── Build page: chunking strategy toggle ─────────────────────────────────
+
+function setStrategy(btn) {
+  document.querySelectorAll('.strategy-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  // Enable chunk-size slider only for "fixed" strategy
+  const isFixed = btn.dataset.strategy === 'fixed';
+  const sizeKnob = document.getElementById('knob-size');
+  sizeKnob.style.opacity       = isFixed ? '1' : '.35';
+  sizeKnob.style.pointerEvents = isFixed ? 'auto' : 'none';
+}
+
+// ─── Build page: embedding model note ────────────────────────────────────
+
+function updateEmbedNote() {
+  const sel    = document.getElementById('embed-select');
+  const opt    = sel.options[sel.selectedIndex];
+  const note   = document.getElementById('embed-note');
+  const custom = document.getElementById('custom-embed-wrap');
+
+  if (opt.value === '__custom__') {
+    custom.style.display = 'block';
+    note.innerHTML = '';
+    return;
+  }
+  custom.style.display = 'none';
+  const cached = opt.dataset.cached === 'true';
+  note.innerHTML =
+    `dim: <span style="color:var(--text)">${opt.dataset.dim}</span> · ${opt.dataset.size} · ` +
+    (cached
+      ? '<span class="cached">✓ cached locally</span>'
+      : '<span class="remote">⬇ downloads on first ingest</span>');
+}
+
+// ─── Build page: manifest card ────────────────────────────────────────────
+
+function renderManifestCard(manifest, chunkCount) {
+  const el = document.getElementById('manifest-card');
+  if (!manifest) {
+    el.innerHTML = `
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:8px 0">
+        ${state.buildKbId ? 'Not yet built — configure params and hit Build' : 'Select a KB to see its manifest'}
+      </div>`;
+    return;
+  }
+
+  const builtAt = new Date(manifest.built_at);
+  el.innerHTML = `
+    <div class="manifest-header">
+      <div class="kb-id-badge">${escHtml(state.buildKbId)}</div>
+      <div class="manifest-age">${fmtAge(builtAt)}</div>
+    </div>
+    <div class="manifest-row"><span>embed_model</span><span class="val">${escHtml(manifest.embed_model)}</span></div>
+    <div class="manifest-row"><span>chunk_strategy</span><span class="val">${escHtml(manifest.chunk_strategy)}</span></div>
+    <div class="manifest-row"><span>chunk_size</span><span class="val">${manifest.chunk_size ?? '—'}</span></div>
+    <div class="manifest-row"><span>overlap</span>
+      <span class="val ${manifest.chunk_step ? '' : 'warn'}">${manifest.chunk_step ?? 'none'}</span></div>
+    <div class="manifest-row"><span>distance</span><span class="val">${escHtml(manifest.distance)}</span></div>
+    <div class="manifest-row"><span>top_k_default</span><span class="val">${manifest.top_k}</span></div>
+    <div class="manifest-row"><span>threshold</span><span class="val">${manifest.threshold}</span></div>
+    <div class="manifest-row"><span>total_chunks</span><span class="val">${chunkCount ?? manifest.total_chunks}</span></div>
+    <div class="manifest-row"><span>sources</span><span class="val">${manifest.sources} file(s)</span></div>
+    <div class="manifest-row"><span>built_at</span>
+      <span class="val">${manifest.built_at.slice(0, 19).replace('T', ' ')} UTC</span></div>
+  `;
+}
+
+function fmtAge(date) {
+  const s = (Date.now() - date.getTime()) / 1000;
+  if (s < 60)     return 'just now';
+  if (s < 3600)   return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400)  return `${Math.floor(s / 3600)} hr ago`;
+  return `${Math.floor(s / 86400)} days ago`;
+}
+
+// ─── Build page: run the build ────────────────────────────────────────────
+
+async function buildKB() {
+  if (!state.buildKbId) { alert('Select a KB first'); return; }
+
+  // Read embed model — use custom field if "custom" is selected
+  let embedModel = document.getElementById('embed-select').value;
+  if (embedModel === '__custom__') {
+    embedModel = document.getElementById('custom-embed-input').value.trim();
+    if (!embedModel) { alert('Enter a custom HuggingFace model name'); return; }
+  }
+
+  // Collect all build params from the UI
+  const activeStrategy = document.querySelector('.strategy-btn.active');
+  const params = {
+    embed_model:    embedModel,
+    chunk_strategy: activeStrategy?.dataset.strategy || 'paragraph',
+    chunk_size:     parseInt(document.getElementById('chunk-size-val').textContent),
+    chunk_step:     parseInt(document.getElementById('overlap-val').textContent),
+    distance:       document.getElementById('distance-select').value,
+    top_k:          parseInt(document.getElementById('topk-val').textContent),
+    threshold:      parseFloat(document.getElementById('threshold-val').textContent),
+  };
+
+  const btn = document.getElementById('build-btn');
+  const log = document.getElementById('build-log');
+
+  // Reset UI
+  btn.disabled    = true;
+  btn.textContent = '⟳ Building...';
+  btn.style.cssText = '';
+  log.innerHTML   = '';
+  log.style.display = 'block';
+
+  const appendLog = (msg, type = 'progress') => {
+    const line = document.createElement('div');
+    line.className = `log-line log-${type}`;
+    line.textContent = msg;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  };
+
+  try {
+    const resp = await fetch(`/api/kbs/${state.buildKbId}/build`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+    }
+
+    // Read SSE stream from the response body using the Fetch Streams API.
+    // Each line is "data: {...}\n\n" — we parse the JSON payload.
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer    = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();   // hold the last incomplete line for the next chunk
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (ev.type === 'progress') {
+          appendLog(ev.msg, 'progress');
+        } else if (ev.type === 'done') {
+          appendLog(ev.msg, 'done');
+          btn.textContent  = '✓ Built successfully';
+          btn.style.background = 'rgba(126,202,143,.12)';
+          btn.style.color      = 'var(--accent)';
+          btn.style.border     = '1px solid var(--accent2)';
+          // Reload KBs so the manifest card and Ask-page cards update
+          await loadKBs();
+          loadBuildKBData();
+        } else if (ev.type === 'error') {
+          appendLog(`✕ ${ev.msg}`, 'error');
+          if (ev.traceback) appendLog(ev.traceback, 'error');
+          btn.textContent      = '✕ Build failed — check log';
+          btn.style.background = 'rgba(224,107,107,.12)';
+          btn.style.color      = 'var(--danger)';
+          btn.style.border     = '1px solid var(--danger)';
+        }
+      }
+    }
+  } catch (e) {
+    appendLog(`Network error: ${e.message}`, 'error');
+    btn.textContent = '✕ Error';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ─── Ask page: KB cards ───────────────────────────────────────────────────
+
+function renderAskKBCards() {
+  const el = document.getElementById('kb-cards');
+  if (state.kbs.length === 0) {
+    el.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--muted)">No KBs yet — go to Build KB</div>';
+    return;
+  }
+
+  // Auto-select first KB if none selected yet
+  if (!state.askKbId) state.askKbId = state.kbs[0].kb_id;
+
+  el.innerHTML = state.kbs.map(kb => `
+    <div class="kb-card ${kb.kb_id === state.askKbId ? 'selected' : ''}"
+         onclick="selectAskKB('${escAttr(kb.kb_id)}', this)">
+      <div class="kb-card-name">${escHtml(kb.kb_id)}</div>
+      <div class="kb-meta">
+        ${kb.build
+          ? `embed: <span class="val">${escHtml(kb.build.embed_model.split('/').pop())}</span><br>
+             chunks: <span class="val">${kb.chunk_count}</span> · ${kb.build.distance}<br>
+             strategy: <span class="val">${kb.build.chunk_strategy}${kb.build.chunk_size ? '/' + kb.build.chunk_size : ''}</span>`
+          : `chunks: <span class="val">${kb.chunk_count}</span>`
+        }
+        ${kb.description ? `<br><span style="color:var(--muted)">${escHtml(kb.description)}</span>` : ''}
+      </div>
+      ${!kb.build ? '<div class="kb-unbuilt">⚠ not yet built</div>' : ''}
+    </div>
+  `).join('');
+
+  updateChatHeader();
+}
+
+function selectAskKB(kbId, cardEl) {
+  state.askKbId = kbId;
+  document.querySelectorAll('#kb-cards .kb-card').forEach(c => c.classList.remove('selected'));
+  cardEl.classList.add('selected');
+  updateChatHeader();
+}
+
+function updateChatHeader() {
+  document.getElementById('chat-kb-chip').textContent    = state.askKbId || '—';
+  const model = document.getElementById('ask-model-select')?.value || '';
+  document.getElementById('chat-model-chip').textContent  = model;
+}
+
+// ─── Ask page: send a message ─────────────────────────────────────────────
+
+async function sendMessage() {
+  if (state.generating) return;
+
+  const input    = document.getElementById('chat-input');
+  const question = input.value.trim();
+  if (!question) return;
+
+  if (!state.askKbId) { alert('Select a knowledge base from the left panel'); return; }
+
+  input.value = '';
+  state.generating = true;
+  document.getElementById('send-btn').disabled = true;
+
+  // Render user bubble
+  appendMessage('user', escHtml(question));
+
+  // Read slider / selector values
+  const topK      = parseInt(document.getElementById('ask-topk-val').textContent);
+  const threshold = parseFloat(document.getElementById('ask-threshold-val').textContent);
+  const model     = document.getElementById('ask-model-select').value;
+
+  // Reset retrieval panel
+  document.getElementById('chunk-count').textContent = '...';
+  document.getElementById('retrieval-list').innerHTML =
+    '<div style="padding:16px;font-family:var(--mono);font-size:11px;color:var(--muted)">Retrieving...</div>';
+
+  // Placeholder assistant bubble (content fills in via streaming)
+  const msgEl     = appendMessage('assistant', '', { model, streaming: true });
+  const contentEl = msgEl.querySelector('.msg-content');
+  const metaEl    = msgEl.querySelector('.msg-meta');
+
+  let fullContent = '';
+
+  try {
+    const resp = await fetch('/api/ask', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kb_id:     state.askKbId,
+        question,
+        top_k:     topK,
+        threshold,
+        model,
+      }),
+    });
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer    = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (ev.type === 'chunks') {
+          // Retrieval phase complete — render the chunks panel
+          renderRetrievalPanel(ev.chunks, ev.all_chunks);
+
+        } else if (ev.type === 'token') {
+          // Append streamed token to the assistant bubble
+          fullContent += ev.content;
+          contentEl.innerHTML = renderMarkdown(fullContent) + '<span class="cursor">▋</span>';
+          scrollChatToBottom();
+
+        } else if (ev.type === 'done') {
+          // Generation complete — remove cursor, update meta line
+          contentEl.innerHTML = renderMarkdown(fullContent);
+          const numKept = document.getElementById('chunk-count').textContent.split('/')[0].trim();
+          metaEl.innerHTML =
+            `<span class="role-bot">${escHtml(model)}</span> · ${numKept} chunks · ${(ev.elapsed_ms / 1000).toFixed(1)}s`;
+
+        } else if (ev.type === 'error') {
+          contentEl.textContent = `Error: ${ev.msg}`;
+          contentEl.style.color = 'var(--danger)';
+        }
+      }
+    }
+  } catch (e) {
+    contentEl.textContent = `Network error: ${e.message}`;
+    contentEl.style.color = 'var(--danger)';
+  } finally {
+    state.generating = false;
+    document.getElementById('send-btn').disabled = false;
+  }
+}
+
+// ─── Ask page: rendering helpers ─────────────────────────────────────────
+
+function appendMessage(role, htmlContent, opts = {}) {
+  const el = document.createElement('div');
+  el.className = `msg ${role}`;
+
+  if (role === 'user') {
+    el.innerHTML =
+      `<div class="msg-meta"><span class="role-user">you</span></div>` +
+      `<div class="msg-content">${htmlContent}</div>`;
+  } else {
+    el.innerHTML =
+      `<div class="msg-meta"><span class="role-bot">${escHtml(opts.model || 'assistant')}</span>` +
+      (opts.streaming ? ' · <span style="color:var(--accent2)">generating...</span>' : '') +
+      `</div><div class="msg-content">${htmlContent}</div>`;
+  }
+
+  document.getElementById('chat-messages').appendChild(el);
+  scrollChatToBottom();
+  return el;
+}
+
+function scrollChatToBottom() {
+  const el = document.getElementById('chat-messages');
+  el.scrollTop = el.scrollHeight;
+}
+
+// Very lightweight markdown: bold, inline code, newlines.
+// We don't need a full parser — just the most common response patterns.
+function renderMarkdown(text) {
+  return escHtml(text)
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`\n]+)`/g, '<code style="font-family:var(--mono);font-size:11px;color:var(--accent2)">$1</code>')
+    .replace(/\n/g, '<br>');
+}
+
+// ─── Ask page: retrieval panel ────────────────────────────────────────────
+
+function renderRetrievalPanel(kept, all) {
+  // "3 / 5" — kept vs total retrieved
+  document.getElementById('chunk-count').textContent = `${kept.length} / ${all.length}`;
+
+  const el = document.getElementById('retrieval-list');
+  if (all.length === 0) {
+    el.innerHTML = '<div style="padding:12px;font-family:var(--mono);font-size:11px;color:var(--muted)">No chunks retrieved</div>';
+    return;
+  }
+
+  el.innerHTML = all.map((c, i) => {
+    const passed   = c.passed_threshold;
+    // Distance 0 = perfect match → full bar.  Distance 1 = worst → empty bar.
+    const barWidth = Math.round(Math.max(0, 1 - c.dist) * 100);
+
+    return `
+      <div class="chunk-card" style="${passed ? '' : 'opacity:.35;border-style:dashed'}">
+        <div class="chunk-top">
+          <div class="chunk-rank" style="${passed ? '' : 'color:var(--muted);background:var(--border)'}">
+            ${i + 1}
+          </div>
+          <div class="chunk-source" style="${passed ? '' : 'color:var(--muted)'}">
+            ${escHtml(c.source)}
+          </div>
+          <div class="dist-bar-wrap">
+            <div class="dist-bar">
+              <div class="dist-bar-fill" style="width:${barWidth}%;${passed ? '' : 'background:var(--border2)'}"></div>
+            </div>
+            <div class="dist-val">${c.dist}</div>
+          </div>
+        </div>
+        <div class="chunk-preview" style="${passed ? '' : 'font-style:italic'}">
+          ${passed
+            ? escHtml(c.text)
+            : `⊘ filtered · dist ${c.dist} > threshold`}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────
+
+// Escape HTML to prevent XSS from corpus content displayed in the UI
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Escape for use inside HTML attribute values (e.g. onclick="...")
+function escAttr(str) {
+  return escHtml(str).replace(/'/g, '&#39;');
+}
+
+// ─── Event listeners ──────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  // ── Drag and drop for file upload ──
+  const dropzone = document.getElementById('dropzone');
+
+  dropzone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropzone.classList.add('drag-over');
+  });
+  dropzone.addEventListener('dragleave', () => {
+    dropzone.classList.remove('drag-over');
+  });
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+    uploadFiles(e.dataTransfer.files);
+  });
+
+  // ── Hidden file input (triggered by clicking dropzone) ──
+  document.getElementById('file-input').addEventListener('change', e => {
+    uploadFiles(e.target.files);
+    // Reset so the same file can be re-uploaded if needed
+    e.target.value = '';
+  });
+
+  // ── Enter to send in chat (Shift+Enter = newline) ──
+  document.getElementById('chat-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // ── Keep model chip in sync when dropdown changes ──
+  document.getElementById('ask-model-select')?.addEventListener('change', updateChatHeader);
+
+  // ── Boot ──
+  init();
+});
+
+</script>
+</body>
+</html>
