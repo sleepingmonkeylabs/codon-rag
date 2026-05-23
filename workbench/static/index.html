@@ -617,6 +617,226 @@ input[type=range] { flex: 1; accent-color: var(--accent); padding: 0; border: no
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ── Eval page layout ────────────────────────────────────────────────────── */
+.eval-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  height: calc(100vh - 52px);
+  width: 100%;
+}
+
+.eval-left {
+  border-right: 1px solid var(--border);
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.eval-right {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Eval run button */
+.eval-run-btn {
+  width: 100%;
+  padding: 11px;
+  background: var(--accent2);
+  color: #0d0f0e;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: .04em;
+  transition: all .2s;
+}
+.eval-run-btn:hover:not(:disabled) { background: var(--accent); }
+.eval-run-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+/* Judge label row */
+.judge-row {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.judge-row .judge-val { color: var(--warn); font-size: 11px; }
+
+/* Eval status bar */
+.eval-status-bar {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.eval-phase-chip {
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: var(--mono);
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+.phase-idle     { background: var(--panel); color: var(--muted); border: 1px solid var(--border); }
+.phase-collect  { background: rgba(226,168,75,.12); color: var(--warn); border: 1px solid rgba(226,168,75,.3); }
+.phase-score    { background: rgba(126,202,143,.10); color: var(--accent2); border: 1px solid rgba(126,202,143,.25); }
+.phase-done     { background: rgba(126,202,143,.14); color: var(--accent); border: 1px solid rgba(126,202,143,.35); }
+.phase-error    { background: rgba(224,107,107,.12); color: var(--danger); border: 1px solid rgba(224,107,107,.3); }
+
+/* Score cards */
+.score-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.score-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.score-card-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+.score-card-value {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+}
+.score-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  position: relative;
+}
+.score-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  position: absolute;
+  left: 0; top: 0;
+  transition: width .4s ease;
+}
+.score-green  { color: var(--accent); }
+.score-yellow { color: var(--warn); }
+.score-red    { color: var(--danger); }
+.bar-green    { background: var(--accent2); }
+.bar-yellow   { background: var(--warn); }
+.bar-red      { background: var(--danger); }
+
+/* QA streaming table */
+.qa-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 18px 14px;
+}
+.qa-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-top: 14px;
+}
+.qa-table th {
+  text-align: left;
+  padding: 5px 8px;
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.qa-table td {
+  padding: 7px 8px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  line-height: 1.5;
+}
+.qa-table tr:last-child td { border-bottom: none; }
+.qa-row-q { color: var(--text); max-width: 240px; }
+.qa-row-a { color: var(--muted); max-width: 360px; }
+.qa-chunks-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 600;
+}
+.chunks-some { background: rgba(126,202,143,.12); color: var(--accent2); }
+.chunks-none { background: rgba(224,107,107,.1); color: var(--danger); }
+
+/* History table */
+.hist-section {
+  border-top: 1px solid var(--border);
+  padding: 14px 18px;
+  flex-shrink: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--surface);
+}
+.hist-section-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.hist-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.hist-table th {
+  text-align: left;
+  padding: 3px 6px;
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.hist-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  color: var(--muted);
+}
+.hist-table tr:last-child td { border-bottom: none; }
+.hist-score { font-weight: 600; }
 </style>
 </head>
 <body>
@@ -633,6 +853,9 @@ input[type=range] { flex: 1; accent-color: var(--accent); padding: 0; border: no
     </button>
     <button class="nav-tab" onclick="showPage('ask', this)">
       <span class="num">2</span>Ask
+    </button>
+    <button class="nav-tab" onclick="showPage('eval', this); loadEvalHistory()">
+      <span class="num">3</span>Evaluate
     </button>
   </nav>
 
@@ -935,6 +1158,135 @@ input[type=range] { flex: 1; accent-color: var(--accent); padding: 0; border: no
 
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- PAGE 3: EVALUATE                                                        -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page" id="page-eval">
+  <div class="eval-layout">
+
+    <!-- ── LEFT: knobs ───────────────────────────────────────────────────── -->
+    <div class="eval-left">
+
+      <!-- KB selector -->
+      <div>
+        <div class="section-label">Knowledge Base</div>
+        <div class="knob">
+          <select id="eval-kb-select">
+            <option value="">— select a KB —</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Retrieval knobs -->
+      <div>
+        <div class="section-label">Retrieval Params</div>
+        <div class="knob">
+          <div class="knob-label">Top-K</div>
+          <div class="slider-row">
+            <input type="range" id="eval-topk-slider" min="1" max="20" value="5"
+                   oninput="document.getElementById('eval-topk-val').textContent=this.value">
+            <div class="slider-val" id="eval-topk-val">5</div>
+          </div>
+        </div>
+        <div class="knob" style="margin-top:10px">
+          <div class="knob-label">Relevance Threshold</div>
+          <div class="slider-row">
+            <input type="range" id="eval-threshold-slider" min="0" max="100" value="65"
+                   oninput="document.getElementById('eval-threshold-val').textContent=(this.value/100).toFixed(2)">
+            <div class="slider-val" id="eval-threshold-val">0.65</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Note -->
+      <div>
+        <div class="section-label">Run Note</div>
+        <div class="knob">
+          <div class="knob-label">Optional label for this run</div>
+          <input type="text" id="eval-note" placeholder='e.g. "fixed chunk strategy"'>
+        </div>
+      </div>
+
+      <!-- Judge info -->
+      <div>
+        <div class="section-label">Judge</div>
+        <div class="judge-row">
+          <div class="knob-label">LLM</div>
+          <div class="judge-val">gemma4:31b-cloud</div>
+          <div class="knob-label" style="margin-top:6px">Embeddings (AnswerRelevancy)</div>
+          <div class="judge-val" style="color:var(--accent2)">all-MiniLM-L6-v2 (local)</div>
+        </div>
+      </div>
+
+      <!-- Questions info -->
+      <div>
+        <div class="section-label">Test Set</div>
+        <div class="judge-row">
+          <div class="knob-label">Questions file</div>
+          <div class="judge-val" style="color:var(--text);font-size:10px">data/test_questions.json</div>
+          <div class="knob-label" style="margin-top:6px">Questions</div>
+          <div class="judge-val" style="color:var(--accent2)">15</div>
+        </div>
+      </div>
+
+      <!-- Run button -->
+      <button class="eval-run-btn" id="eval-run-btn" onclick="runEval()">
+        ▶ Run Evaluation
+      </button>
+
+    </div><!-- /eval-left -->
+
+    <!-- ── RIGHT: streaming output + history ─────────────────────────────── -->
+    <div class="eval-right">
+
+      <!-- Status bar -->
+      <div class="eval-status-bar">
+        <span class="eval-phase-chip phase-idle" id="eval-phase-chip">idle</span>
+        <span id="eval-status-msg">Select a KB and hit Run Evaluation</span>
+      </div>
+
+      <!-- Score cards (hidden until done) -->
+      <div class="score-cards" id="eval-score-cards" style="display:none">
+        <!-- Rendered by renderScoreCards() -->
+      </div>
+
+      <!-- Live Q→A table -->
+      <div class="qa-area">
+        <div id="eval-qa-wrap" style="display:none">
+          <table class="qa-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Question</th>
+                <th>Answer (preview)</th>
+                <th>Chunks</th>
+              </tr>
+            </thead>
+            <tbody id="eval-qa-tbody">
+            </tbody>
+          </table>
+        </div>
+        <div id="eval-qa-placeholder"
+             style="padding:24px 0;font-family:var(--mono);font-size:11px;color:var(--muted)">
+          Q→A rows appear here live as each question is processed
+        </div>
+      </div>
+
+      <!-- Run history -->
+      <div class="hist-section" id="eval-hist-section">
+        <div class="hist-section-label">Run History</div>
+        <div id="eval-hist-wrap">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted)">
+            No eval runs yet
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /eval-right -->
+  </div><!-- /eval-layout -->
+</div><!-- /page-eval -->
+
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- JAVASCRIPT                                                              -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <script>
@@ -994,6 +1346,7 @@ async function loadKBs() {
   }
   renderBuildKBSelect();
   renderAskKBCards();
+  renderEvalKBSelect();
 }
 
 // ─── Data: load Ollama models ─────────────────────────────────────────────
@@ -1633,6 +1986,227 @@ function escHtml(str) {
 // Escape for use inside HTML attribute values (e.g. onclick="...")
 function escAttr(str) {
   return escHtml(str).replace(/'/g, '&#39;');
+}
+
+// ─── Evaluate page ───────────────────────────────────────────────────────
+
+function renderEvalKBSelect() {
+  const sel = document.getElementById('eval-kb-select');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— select a KB —</option>';
+  state.kbs.forEach(kb => {
+    const opt = document.createElement('option');
+    opt.value = kb.kb_id;
+    opt.textContent = `${kb.kb_id}${kb.description ? '  —  ' + kb.description : ''}`;
+    sel.appendChild(opt);
+  });
+  if (prev && state.kbs.find(k => k.kb_id === prev)) sel.value = prev;
+  else if (state.kbs.length > 0) sel.value = state.kbs[0].kb_id;
+}
+
+function evalSetPhase(phase, msg) {
+  const chip = document.getElementById('eval-phase-chip');
+  chip.className = 'eval-phase-chip phase-' + phase;
+  chip.textContent = phase;
+  if (msg !== undefined) document.getElementById('eval-status-msg').textContent = msg;
+}
+
+function scoreColor(v) {
+  if (v >= 0.80) return 'green';
+  if (v >= 0.65) return 'yellow';
+  return 'red';
+}
+
+function renderScoreCards(scores) {
+  const el = document.getElementById('eval-score-cards');
+  const metrics = [
+    { key: 'faithfulness',     label: 'Faithfulness' },
+    { key: 'answer_relevancy', label: 'Answer Relevancy' },
+    { key: 'context_recall',   label: 'Context Recall' },
+  ];
+  el.innerHTML = metrics.map(m => {
+    const v   = scores[m.key] ?? 0;
+    const cls = scoreColor(v);
+    return `
+      <div class="score-card">
+        <div class="score-card-label">${m.label}</div>
+        <div class="score-card-value score-${cls}">${v.toFixed(3)}</div>
+        <div class="score-bar">
+          <div class="score-bar-fill bar-${cls}" style="width:${Math.round(v*100)}%"></div>
+        </div>
+      </div>`;
+  }).join('');
+  el.style.display = 'grid';
+}
+
+function appendQARow(i, n, question, answer, chunksKept) {
+  const wrap = document.getElementById('eval-qa-wrap');
+  const placeholder = document.getElementById('eval-qa-placeholder');
+  wrap.style.display = 'block';
+  placeholder.style.display = 'none';
+
+  const tbody = document.getElementById('eval-qa-tbody');
+  const tr = document.createElement('tr');
+  const answerPreview = answer.length > 120 ? answer.slice(0, 120) + '…' : answer;
+  tr.innerHTML = `
+    <td style="color:var(--muted);white-space:nowrap">${i}/${n}</td>
+    <td class="qa-row-q">${escHtml(question)}</td>
+    <td class="qa-row-a">${escHtml(answerPreview)}</td>
+    <td>
+      <span class="qa-chunks-badge ${chunksKept > 0 ? 'chunks-some' : 'chunks-none'}">
+        ${chunksKept}
+      </span>
+    </td>`;
+  tbody.appendChild(tr);
+  // Scroll qa-area to bottom
+  const qaArea = document.querySelector('.qa-area');
+  if (qaArea) qaArea.scrollTop = qaArea.scrollHeight;
+}
+
+function renderEvalHistory(records) {
+  const wrap = document.getElementById('eval-hist-wrap');
+  if (!records || records.length === 0) {
+    wrap.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--muted)">No eval runs yet</div>';
+    return;
+  }
+  wrap.innerHTML = `
+    <table class="hist-table">
+      <thead>
+        <tr>
+          <th>Run</th>
+          <th>KB</th>
+          <th>top_k</th>
+          <th>thresh</th>
+          <th>Faithful</th>
+          <th>Relevancy</th>
+          <th>Recall</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${records.map(r => {
+          const s = r.scores || {};
+          const faith = s.faithfulness     ?? '—';
+          const relev = s.answer_relevancy ?? '—';
+          const recal = s.context_recall   ?? '—';
+          const fCls  = typeof faith === 'number' ? `score-${scoreColor(faith)}` : '';
+          const rCls  = typeof relev === 'number' ? `score-${scoreColor(relev)}` : '';
+          const rcCls = typeof recal === 'number' ? `score-${scoreColor(recal)}` : '';
+          const ts = (r.run_id || '').replace('T', ' ').replace('Z', '').slice(0, 16);
+          return `<tr>
+            <td style="color:var(--muted)">${escHtml(ts)}</td>
+            <td>${escHtml(r.kb_id || '—')}</td>
+            <td>${r.top_k ?? '—'}</td>
+            <td>${r.threshold ?? '—'}</td>
+            <td class="hist-score ${fCls}">${typeof faith === 'number' ? faith.toFixed(3) : faith}</td>
+            <td class="hist-score ${rCls}">${typeof relev === 'number' ? relev.toFixed(3) : relev}</td>
+            <td class="hist-score ${rcCls}">${typeof recal === 'number' ? recal.toFixed(3) : recal}</td>
+            <td style="color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis">${escHtml(r.note || '')}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function loadEvalHistory() {
+  try {
+    const resp = await fetch('/api/eval/log');
+    if (!resp.ok) return;
+    const records = await resp.json();
+    renderEvalHistory(records);
+  } catch (e) {
+    console.error('Failed to load eval history:', e);
+  }
+}
+
+async function runEval() {
+  const kbId     = document.getElementById('eval-kb-select').value;
+  const topK     = parseInt(document.getElementById('eval-topk-val').textContent);
+  const threshold = parseFloat(document.getElementById('eval-threshold-val').textContent);
+  const note     = document.getElementById('eval-note').value.trim();
+
+  if (!kbId) { alert('Select a KB first'); return; }
+
+  // Reset UI
+  const runBtn = document.getElementById('eval-run-btn');
+  runBtn.disabled = true;
+  runBtn.textContent = '⟳ Running...';
+
+  document.getElementById('eval-score-cards').style.display = 'none';
+  document.getElementById('eval-qa-wrap').style.display = 'none';
+  document.getElementById('eval-qa-tbody').innerHTML = '';
+  document.getElementById('eval-qa-placeholder').style.display = 'block';
+  document.getElementById('eval-qa-placeholder').textContent = 'Q→A rows appear here live as each question is processed';
+
+  evalSetPhase('collect', `Collecting responses from KB "${kbId}" (top_k=${topK}, threshold=${threshold})…`);
+
+  try {
+    const resp = await fetch('/api/eval/run', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ kb_id: kbId, top_k: topK, threshold, note }),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      evalSetPhase('error', `HTTP ${resp.status}: ${errText}`);
+      return;
+    }
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer    = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (ev.type === 'collect_start') {
+          evalSetPhase('collect', `Phase 1 — collecting ${ev.n} responses…`);
+
+        } else if (ev.type === 'qa') {
+          evalSetPhase('collect', `Phase 1 — question ${ev.i}/${ev.n}`);
+          appendQARow(ev.i, ev.n, ev.question, ev.answer, ev.chunks_kept);
+
+        } else if (ev.type === 'collect_done') {
+          evalSetPhase('score', 'Phase 1 complete — Phase 2: scoring with gemma4:31b-cloud…');
+
+        } else if (ev.type === 'score_start') {
+          evalSetPhase('score', 'Scoring all responses with RAGAS (this takes a few minutes)…');
+
+        } else if (ev.type === 'done') {
+          evalSetPhase('done', `Done — ${ev.record?.n_questions ?? ''} questions scored`);
+          renderScoreCards(ev.scores);
+          // Reload history so new run appears
+          await loadEvalHistory();
+          runBtn.textContent = '✓ Run complete — Run Again';
+
+        } else if (ev.type === 'error') {
+          evalSetPhase('error', `Error: ${ev.msg}`);
+          // Show traceback in a placeholder-like div
+          document.getElementById('eval-qa-placeholder').style.display = 'block';
+          document.getElementById('eval-qa-placeholder').textContent = ev.traceback || ev.msg;
+          document.getElementById('eval-qa-placeholder').style.color = 'var(--danger)';
+          runBtn.textContent = '✕ Failed — Retry';
+        }
+      }
+    }
+  } catch (e) {
+    evalSetPhase('error', `Network error: ${e.message}`);
+    runBtn.textContent = '✕ Error — Retry';
+  } finally {
+    runBtn.disabled = false;
+  }
 }
 
 // ─── Event listeners ──────────────────────────────────────────────────────

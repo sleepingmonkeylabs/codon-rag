@@ -1,0 +1,77 @@
+[
+  {
+    "id": "q01",
+    "question": "When was Codon Consulting founded and where is it based?",
+    "ground_truth": "Codon Consulting was founded in 2019 and is based in Stockholm, Sweden."
+  },
+  {
+    "id": "q02",
+    "question": "Who are the founders of Codon?",
+    "ground_truth": "Codon was founded by Erik Fredlund (Managing Director) and Mikael Huss (Tech Lead)."
+  },
+  {
+    "id": "q03",
+    "question": "What is Codon's Industrial Edge offering?",
+    "ground_truth": "Codon's Industrial Edge offering focuses on vertical AI integration across the ISA-95 hierarchy, from device-level sensor data to strategic decision support. It includes AI models that run locally on the production line, avoiding cloud latency and cost."
+  },
+  {
+    "id": "q04",
+    "question": "What is Codon's partnership with Siemens?",
+    "ground_truth": "Codon became a certified Siemens Industrial Edge Solution Partner in January 2026, enabling deployment of AI apps on industrial edge hardware at the factory floor."
+  },
+  {
+    "id": "q05",
+    "question": "What industries does Codon work in?",
+    "ground_truth": "Codon works in manufacturing, life sciences, pharma, agriculture, property tech, media and intelligence, HR tech, and retail."
+  },
+  {
+    "id": "q06",
+    "question": "What results did Codon achieve in the agriculture computer vision project?",
+    "ground_truth": "In the agriculture computer vision project for Sweden's largest ecological herb producer, Codon delivered a 10% increase in capacity, 30% reduction in energy consumption, and 50% reduction in waste."
+  },
+  {
+    "id": "q07",
+    "question": "What is the four-stage AI innovation process Codon uses with clients?",
+    "ground_truth": "Codon's four-stage process is: Discovery (understanding client business and challenges), Strategy (tailored AI blueprint), Implementation (integration with iterative refinement), and Monitoring and Support (long-term partnership and optimization)."
+  },
+  {
+    "id": "q08",
+    "question": "How does Codon's public affairs intelligence solution work?",
+    "ground_truth": "Codon built a generative AI system that sifts through large volumes of public affairs information, ranks content by relevance, provides recommendations, summarizes relevant information per company, and delivers it automatically."
+  },
+  {
+    "id": "q09",
+    "question": "What NLP services does Codon offer?",
+    "ground_truth": "Codon's NLP services include chatbots and conversational AI, sentiment analysis, document classification, and speech-to-text transcription."
+  },
+  {
+    "id": "q10",
+    "question": "What was the ROI on the music royalty value prediction project?",
+    "ground_truth": "The music royalty value prediction project delivered an ROI of 10x on a yearly basis."
+  },
+  {
+    "id": "q11",
+    "question": "Does Codon work with nuclear power plants?",
+    "ground_truth": "Yes. Codon built an on-premise AI-based OCR system for one of Sweden's three nuclear power plants to digitize over 100,000 classified documents."
+  },
+  {
+    "id": "q12",
+    "question": "What are the three advantages of edge deployment Codon describes?",
+    "ground_truth": "The three advantages are: zero latency for real-time decision-making, data sovereignty keeping sensitive data within the local network, and reduced costs from lower cloud bandwidth and storage."
+  },
+  {
+    "id": "q13",
+    "question": "What does Codon's forward deployed engineering model mean?",
+    "ground_truth": "Forward deployed engineering means Codon engineers work directly at the client's operations site, alongside domain experts, ensuring AI solutions are technically sound and deeply integrated into daily workflow."
+  },
+  {
+    "id": "q14",
+    "question": "Is Codon GDPR compliant?",
+    "ground_truth": "Yes, Codon is GDPR compliant and publishes a Privacy Policy, Recruitment Privacy Policy, and Cookie Policy on its website."
+  },
+  {
+    "id": "q15",
+    "question": "What was the challenge in the pest control IoT sensor project?",
+    "ground_truth": "The client was managing vast volumes of IoT sensor data generated around the clock. Manual interpretation was no longer scalable — unclear alarms made prioritization difficult, increasing costs and slowing response times."
+  }
+]

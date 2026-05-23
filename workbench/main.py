@@ -35,11 +35,13 @@ Design notes
 
 # ── stdlib ────────────────────────────────────────────────────────────────────
 import hashlib
+import importlib
 import json
 import os
 import queue as sync_queue
 import sys
 import threading
+import time
 import traceback
 import urllib.error
 import urllib.request
@@ -705,41 +707,64 @@ def ask(body: AskRequest):
                 "stream":   True,   # Ollama returns NDJSON, one object per line
             }).encode("utf-8")
 
-            req = urllib.request.Request(
-                f"{OLLAMA_BASE}/api/chat",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-            )
+            # ── Retry loop: reconnect to Ollama after sleep/wake ─────────
+            MAX_RETRIES = 3
+            backoff = 2  # seconds — doubles each retry: 2, 4, 8
 
-            # Read Ollama's NDJSON stream line-by-line and forward each token.
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                for raw_line in resp:
-                    line = raw_line.strip()
-                    if not line:
-                        continue
-                    try:
-                        obj = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+            for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                    req = urllib.request.Request(
+                        f"{OLLAMA_BASE}/api/chat",
+                        data=payload,
+                        headers={"Content-Type": "application/json"},
+                    )
 
-                    content = obj.get("message", {}).get("content", "")
-                    if content:
+                    # Read Ollama's NDJSON stream line-by-line and forward each token.
+                    with urllib.request.urlopen(req, timeout=120) as resp:
+                        for raw_line in resp:
+                            line = raw_line.strip()
+                            if not line:
+                                continue
+                            try:
+                                obj = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+
+                            content = obj.get("message", {}).get("content", "")
+                            if content:
+                                yield (
+                                    "data: "
+                                    + json.dumps({"type": "token", "content": content})
+                                    + "\n\n"
+                                )
+
+                            if obj.get("done"):
+                                elapsed = int(
+                                    (datetime.now(timezone.utc) - start).total_seconds() * 1000
+                                )
+                                yield (
+                                    "data: "
+                                    + json.dumps({"type": "done", "elapsed_ms": elapsed})
+                                    + "\n\n"
+                                )
+                                break
+                    break  # success — exit retry loop
+
+                except (urllib.error.URLError, ConnectionError, OSError, TimeoutError) as e:
+                    # Network-level error — Ollama unreachable or socket died (sleep/wake).
+                    if attempt < MAX_RETRIES:
+                        wait = backoff * (2 ** (attempt - 1))
                         yield (
                             "data: "
-                            + json.dumps({"type": "token", "content": content})
+                            + json.dumps({
+                                "type": "progress",
+                                "msg":  f"Connection lost (attempt {attempt}/{MAX_RETRIES}), retrying in {wait}s...",
+                            })
                             + "\n\n"
                         )
-
-                    if obj.get("done"):
-                        elapsed = int(
-                            (datetime.now(timezone.utc) - start).total_seconds() * 1000
-                        )
-                        yield (
-                            "data: "
-                            + json.dumps({"type": "done", "elapsed_ms": elapsed})
-                            + "\n\n"
-                        )
-                        break
+                        time.sleep(wait)
+                    else:
+                        raise  # exhausted retries — fall through to outer except
 
         except Exception as exc:
             yield (
@@ -760,6 +785,187 @@ def ask(body: AskRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Evaluate — SSE streaming eval run + log endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+
+EVAL_LOG_PATH = REPO_ROOT / "data" / "eval_log.jsonl"
+QUESTIONS_PATH = REPO_ROOT / "data" / "test_questions.json"
+
+
+class EvalRequest(BaseModel):
+    kb_id:     str
+    top_k:     int   = 5
+    threshold: float = 0.65
+    note:      str   = ""
+
+
+def _blocking_eval(
+    kb_id:     str,
+    top_k:     int,
+    threshold: float,
+    note:      str,
+    q:         sync_queue.Queue,
+) -> None:
+    """
+    Run a full two-phase RAGAS eval in a daemon thread, emitting SSE events.
+
+    Phase 1: retrieve + generate for every test question (streams qa events).
+    Phase 2: score all responses with RAGAS judge (one blocking call).
+
+    Queue event types
+    -----------------
+    {"type": "collect_start", "n": 15, "kb_id": "...", "top_k": 5, "threshold": 0.65}
+    {"type": "qa",            "i": 3, "n": 15, "question": "...", "answer": "...", "chunks_kept": 4}
+    {"type": "collect_done",  "checkpoint": "..."}
+    {"type": "score_start"}
+    {"type": "done",          "scores": {...}, "record": {...}}
+    {"type": "error",         "msg": "...", "traceback": "..."}
+    """
+    def emit(event: dict):
+        q.put(event)
+
+    try:
+        # ── Lazy import eval module in the background thread ────────────────
+        # eval.py has heavy module-level imports (ragas, langchain, HF
+        # embeddings).  Importing lazily here keeps workbench startup fast
+        # and confines the heavy loading to the first eval request.
+        src_dir = str(REPO_ROOT / "src")
+        if src_dir not in sys.path:
+            sys.path.insert(0, src_dir)
+
+        import importlib
+        import eval as eval_mod
+        importlib.reload(eval_mod)   # pick up any edits without restart
+
+        # ── Phase 1: collect ────────────────────────────────────────────────
+        run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+        checkpoint = eval_mod.phase1_collect(
+            kb_id=kb_id,
+            top_k=top_k,
+            threshold=threshold,
+            questions_path=str(QUESTIONS_PATH),
+            sleep_s=eval_mod.JUDGE_SLEEP_S,
+            run_id=run_id,
+            emit=emit,
+        )
+
+        # ── Phase 2: score ──────────────────────────────────────────────────
+        emit({"type": "score_start"})
+        scores = eval_mod.phase2_score(checkpoint)
+
+        n_questions = sum(
+            1 for l in checkpoint.read_text(encoding="utf-8").splitlines() if l.strip()
+        )
+
+        import src.config as cfg_mod
+        record = {
+            "run_id":         run_id,
+            "kb_id":          kb_id,
+            "embed_model":    cfg_mod.EMBED_MODEL,
+            "chunk_strategy": cfg_mod.CHUNK_STRATEGY,
+            "top_k":          top_k,
+            "threshold":      threshold,
+            "ollama_model":   cfg_mod.OLLAMA_MODEL,
+            "judge_model":    eval_mod.JUDGE_MODEL,
+            "prompt_version": cfg_mod.PROMPT_VERSION,
+            "prompt_hash":    cfg_mod.PROMPT_HASH,
+            "n_questions":    n_questions,
+            "note":           note,
+            "scores":         scores,
+        }
+
+        # Append to eval log
+        EVAL_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(EVAL_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+
+        emit({"type": "done", "scores": scores, "record": record})
+
+    except Exception as exc:
+        q.put({
+            "type":      "error",
+            "msg":       str(exc),
+            "traceback": traceback.format_exc(),
+        })
+
+
+@app.post("/api/eval/run", summary="Run full RAGAS eval — SSE progress stream")
+def run_eval(body: EvalRequest):
+    """
+    Streams a two-phase RAGAS evaluation as Server-Sent Events.
+
+    Phase 1 — Collect: for each test question, retrieve + generate, emit "qa" events.
+    Phase 2 — Score:   run RAGAS faithfulness/answer_relevancy/context_recall, emit "done".
+
+    SSE event types
+    ---------------
+    {"type": "collect_start", "n": 15, "kb_id": "...", "top_k": 5, "threshold": 0.65}
+    {"type": "qa",            "i": 3, "n": 15, "question": "...", "answer": "...", "chunks_kept": 4}
+    {"type": "collect_done",  "checkpoint": "..."}
+    {"type": "score_start"}
+    {"type": "done",          "scores": {...}, "record": {...}}
+    {"type": "error",         "msg": "...", "traceback": "..."}
+    """
+    registry = _read_registry()
+    if body.kb_id not in registry:
+        raise HTTPException(404, f"KB '{body.kb_id}' not found")
+    if not QUESTIONS_PATH.exists():
+        raise HTTPException(500, f"Test questions not found at {QUESTIONS_PATH}")
+
+    q = sync_queue.Queue()
+
+    thread = threading.Thread(
+        target=_blocking_eval,
+        args=(body.kb_id, body.top_k, body.threshold, body.note, q),
+        daemon=True,
+        name=f"eval-{body.kb_id}",
+    )
+    thread.start()
+
+    def event_stream():
+        # Phase 2 (`evaluate()`) is one long blocking call that emits nothing,
+        # often 20+ minutes with a cloud judge.  A short timeout here makes the
+        # generator yield an SSE comment every few seconds during that silence,
+        # which keeps the browser / proxy from declaring the connection idle and
+        # closing it (the "Network error — Retry" symptom).
+        KEEPALIVE_S = 10
+        while True:
+            try:
+                item = q.get(timeout=KEEPALIVE_S)
+                yield f"data: {json.dumps(item)}\n\n"
+                if item.get("type") in ("done", "error"):
+                    break
+            except sync_queue.Empty:
+                yield ": keepalive\n\n"
+        thread.join()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/eval/log", summary="Return eval_log.jsonl as a JSON array (newest first)")
+def get_eval_log():
+    """
+    Read data/eval_log.jsonl and return all records as a JSON array,
+    newest-first.  Returns [] if the log does not exist yet.
+    """
+    if not EVAL_LOG_PATH.exists():
+        return []
+    records = []
+    for line in EVAL_LOG_PATH.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    return list(reversed(records))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

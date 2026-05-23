@@ -8,14 +8,19 @@ data/corpus/<kb_id>/*.md  →  src/ingest.py (Incremental)  →  ChromaDB (chrom
                                                ↓
 User question  →  embed (MiniLM)  →  similarity search (top-K)
                                                ↓
-                                src/rag.py  or  src/rag_lc.py
+                              workbench/main.py (FastAPI + SSE)
                                                ↓
                           Ollama (ministral-3:3b @ localhost:11434)
                                                ↓
                                    Answer + source citations
                                                ↓
-                              app.py  (Streamlit multipage UI)
+                              workbench/static/index.html  (SPA)
 ```
+
+### Active UI: Workbench (FastAPI)
+
+> **All active development happens in `workbench/`.  Do NOT modify Streamlit files
+> (`app.py`, `pages/`) — they are legacy and may be removed later.**
 
 ### Stack
 
@@ -23,14 +28,15 @@ User question  →  embed (MiniLM)  →  similarity search (top-K)
 |---|---|
 | Corpus | Multiple independent knowledge bases configured in `data/kb_registry.json` |
 | Chunking | Paragraph-split (default) or fixed-character |
-| Embeddings | `all-MiniLM-L6-v2` via `sentence-transformers` / `langchain-huggingface` |
+| Embeddings | `all-MiniLM-L6-v2` via `sentence-transformers` |
 | Vector store | ChromaDB (persistent, cosine distance, with rich metadata: `kb_id`, `doc_id`, `file_hash`) |
 | Ingestion | Incremental ingestion natively skipping unchanged files, with surgical file/KB deletion |
 | LLM | Ollama — `ministral-3:3b` running locally at `http://127.0.0.1:11434` |
 | RAG (raw) | `src/rag.py` — plain Python + `urllib`, no framework |
 | RAG (LangChain) | `src/rag_lc.py` — LangChain LCEL chain |
-| UI | Streamlit multipage app (`app.py` + `pages/1_Knowledge_Bases.py` + `pages/2_Ask.py`) |
-| Tunneling | `ngrok.exe` — expose Streamlit to the internet |
+| UI (active) | **Workbench** — FastAPI backend (`workbench/main.py`) + vanilla JS SPA (`workbench/static/index.html`) at `http://localhost:8000` |
+| UI (legacy) | Streamlit multipage app (`app.py` + `pages/`) — not actively maintained, do not modify |
+| Tunneling | `ngrok.exe` — expose app to the internet |
 
 ---
 <!-- Section from: c:\Users\DmitriApassov\Documents\codon\codon-rag\CLAUDE.md | Lines: 39-61 -->
@@ -39,10 +45,14 @@ User question  →  embed (MiniLM)  →  similarity search (top-K)
 
 ```
 codon-rag/
-├── app.py                  # Streamlit entry point (Landing Page)
-├── pages/
-│   ├── 1_Knowledge_Bases.py # KB Management UI
-│   └── 2_Ask.py            # Streamlit chat interface UI
+├── workbench/              # ★ ACTIVE UI — all new work goes here
+│   ├── main.py             # FastAPI backend (KB mgmt, ingest SSE, ask SSE, eval SSE)
+│   ├── static/index.html   # Vanilla JS single-page app
+│   └── requirements.txt    # Workbench-specific deps (fastapi, uvicorn, etc.)
+├── app.py                  # [LEGACY] Streamlit entry point — do not modify
+├── pages/                  # [LEGACY] Streamlit pages — do not modify
+│   ├── 1_Knowledge_Bases.py
+│   └── 2_Ask.py
 ├── requirements.txt        # Python dependencies
 ├── ngrok.exe               # ngrok binary for public tunneling
 ├── src/
@@ -66,13 +76,16 @@ codon-rag/
 ## Quick Commands
 
 ```bash
+# ── Workbench (active UI) ────────────────────────────────────────────────────
+uvicorn workbench.main:app --reload               # open Workbench at localhost:8000
+
+# ── CLI tools ────────────────────────────────────────────────────────────────
 python src/ingest.py --kb codon                   # build / rebuild the vector store incrementally
 python src/ingest.py --kb codon --delete-file f.md # drop a single file's chunks
 python src/ingest.py --kb codon --delete-kb       # drop entire KB and remove from registry
 python src/query.py --kb codon "question"         # retrieval debug (no LLM)
 python src/rag.py --kb codon "question"           # full RAG, raw Python
 python src/rag_lc.py --kb codon "question"        # full RAG, LangChain
-streamlit run app.py                              # open Streamlit UI at localhost:8501
 ```
 
 ---
@@ -106,9 +119,11 @@ All previously known technical debt issues have been addressed:
 - ~~`CORPUS_DIR` and `CHROMA_DIR` are absolute Windows paths. Replace with `pathlib.Path(__file__).parent.parent / "..."` for cross-platform portability.~~ (Resolved: Updated paths in `config.py` using `pathlib.Path(__file__).parent.parent`)
 - ~~`chunk_fixed()` in `ingest.py` has no overlap. Add a `step` parameter smaller than `size` to improve retrieval across chunk boundaries.~~ (Resolved: Added `step` argument to `chunk_fixed` in `ingest.py` and `FIXED_CHUNK_STEP` config to `config.py`)
 - ~~The LangChain chain in `rag_lc.py` and `app.py` does not apply `RELEVANCE_THRESHOLD`. Add a `RunnableLambda` filter to match `rag.py` behavior.~~ (Resolved: Implemented `RunnableLambda` to filter retrieved chunks by `cfg.RELEVANCE_THRESHOLD` via `similarity_search_with_score` in both `app.py` and `src/rag_lc.py`)
-## Streamlit & ChromaDB Integration Gotchas
+## ChromaDB Threading Gotchas (learned from Streamlit, still applies to Workbench)
 
-During the development of the multipage UI, several critical issues were encountered regarding the intersection of Streamlit's caching/threading model and ChromaDB's local persistence.
+> The Streamlit UI is legacy, but these lessons carry over to the Workbench's
+> FastAPI backend, which also runs multi-threaded (uvicorn default thread pool).
+> The `_chroma_client()` helper in `workbench/main.py` already applies the fix.
 
 ### 1. SQLite Thread-Sharing Crashes
 **Problem:** Streamlit runs on a multi-threaded execution model. By default, `chromadb.PersistentClient` maintains a singleton cache of the SQLite connection in the background. If Streamlit caches the `chromadb` client using `@st.cache_resource`, subsequent user interactions may be routed to a different background thread. When the new thread attempts to query the database, SQLite throws a strict cross-thread violation: `sqlite3.ProgrammingError: SQLite objects created in a thread can only be used in that same thread`.

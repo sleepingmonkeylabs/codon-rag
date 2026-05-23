@@ -3,7 +3,19 @@
     "kb_id": "codon",
     "collection": "codon_docs",
     "corpus_dir": "data/corpus",
-    "description": "Codon Consulting public website content"
+    "description": "Codon Consulting public website content",
+    "build": {
+      "embed_model": "all-MiniLM-L6-v2",
+      "chunk_strategy": "paragraph",
+      "chunk_size": null,
+      "chunk_step": null,
+      "distance": "cosine",
+      "top_k": 5,
+      "threshold": 0.65,
+      "built_at": "2026-05-22T18:52:34.156313+00:00",
+      "total_chunks": 329,
+      "sources": 8
+    }
   },
   "buddhism": {
     "kb_id": "buddhism",

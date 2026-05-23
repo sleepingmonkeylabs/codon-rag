@@ -49,6 +49,107 @@ def load_kb_config(kb_id: str) -> dict:
         sys.exit(1)
     return registry[kb_id]
 
+# ── Importable build function for eval runners ────────────────────────────────
+
+def build_kb(
+    kb_id: str,
+    collection_name: str,
+    chunk_strategy: str = None,
+    chunk_size: int = None,
+) -> int:
+    """
+    Build a ChromaDB collection from the KB's corpus directory.
+
+    Designed for eval_grid.py: accepts an arbitrary `collection_name` so
+    ephemeral collections can be built without touching kb_registry.json.
+
+    Uses cfg.CHUNK_STRATEGY / cfg.FIXED_CHUNK_SIZE as defaults when the
+    caller omits those args.  chunk_step for fixed strategy always uses
+    cfg.FIXED_CHUNK_STEP (or falls back to chunk_size if not set).
+
+    Returns the total number of chunks written.
+    """
+    if chunk_strategy is None:
+        chunk_strategy = cfg.CHUNK_STRATEGY
+    if chunk_size is None:
+        chunk_size = cfg.FIXED_CHUNK_SIZE
+
+    kb_config = load_kb_config(kb_id)
+    corpus_dir = kb_config.get("corpus_dir", cfg.CORPUS_DIR)
+    if not os.path.isabs(corpus_dir):
+        corpus_dir = os.path.join(cfg.BASE_DIR, corpus_dir)
+
+    if not os.path.exists(corpus_dir):
+        raise FileNotFoundError(f"Corpus directory not found: {corpus_dir}")
+
+    md_files = sorted(f for f in os.listdir(corpus_dir) if f.endswith((".md", ".txt")))
+    if not md_files:
+        raise ValueError(f"No .md or .txt files found in {corpus_dir}")
+
+    chromadb.api.client.SharedSystemClient.clear_system_cache()
+    client = chromadb.PersistentClient(path=cfg.CHROMA_DIR)
+
+    # Drop and recreate so the collection is always fresh for eval purposes.
+    existing = {c.name for c in client.list_collections()}
+    if collection_name in existing:
+        client.delete_collection(collection_name)
+
+    collection = client.create_collection(
+        name=collection_name,
+        metadata={"hnsw:space": cfg.DISTANCE},
+    )
+
+    all_chunks: list[str] = []
+    all_ids:    list[str] = []
+    all_meta:   list[dict] = []
+    ingested_at = datetime.utcnow().isoformat() + "Z"
+
+    for fname in md_files:
+        path = os.path.join(corpus_dir, fname)
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+
+        file_hash = hashlib.sha256(text.encode()).hexdigest()
+        doc_id    = hashlib.sha256(f"{kb_id}{fname}".encode()).hexdigest()
+
+        if chunk_strategy == "fixed":
+            step   = getattr(cfg, "FIXED_CHUNK_STEP", chunk_size)
+            chunks = chunk_fixed(text, chunk_size, step)
+        else:
+            chunks = chunk_paragraph(text)
+
+        try:
+            source_path = os.path.relpath(path, cfg.BASE_DIR)
+        except ValueError:
+            source_path = path
+
+        for i, chunk in enumerate(chunks):
+            all_chunks.append(chunk)
+            all_ids.append(f"{doc_id}::{i}")
+            all_meta.append({
+                "kb_id":        kb_id,
+                "source_file":  fname,
+                "source_path":  source_path,
+                "doc_id":       doc_id,
+                "file_hash":    file_hash,
+                "chunk_index":  i,
+                "total_chunks": len(chunks),
+                "ingested_at":  ingested_at,
+            })
+
+    model      = SentenceTransformer(cfg.EMBED_MODEL)
+    embeddings = model.encode(all_chunks, show_progress_bar=False).tolist()
+
+    collection.add(
+        ids=all_ids,
+        embeddings=embeddings,
+        documents=all_chunks,
+        metadatas=all_meta,
+    )
+
+    return len(all_chunks)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():

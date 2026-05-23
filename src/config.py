@@ -28,3 +28,14 @@ FIXED_CHUNK_STEP = 150           # chars — overlap step for fixed chunking
 # ── Retrieval ─────────────────────────────────────────────────────────────────
 TOP_K = 5
 RELEVANCE_THRESHOLD = 0.65
+
+# ── Prompt versioning ─────────────────────────────────────────────────────────
+import hashlib
+
+SYSTEM_PROMPT = """You are a helpful assistant for Codon Consulting.
+Answer questions using only the provided context chunks.
+If the context does not contain the answer, say clearly: "I don't have information about that."
+Always cite the source document names at the end of your answer."""
+
+PROMPT_VERSION = "v1.0"
+PROMPT_HASH = hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest()[:8]
