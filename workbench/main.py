@@ -854,7 +854,10 @@ def _blocking_eval(
 
         # ── Phase 2: score ──────────────────────────────────────────────────
         emit({"type": "score_start"})
-        scores = eval_mod.phase2_score(checkpoint)
+        scores = {
+            k: (None if isinstance(v, float) and (v != v) else v)
+            for k, v in eval_mod.phase2_score(checkpoint).items()
+        }
 
         n_questions = sum(
             1 for l in checkpoint.read_text(encoding="utf-8").splitlines() if l.strip()
