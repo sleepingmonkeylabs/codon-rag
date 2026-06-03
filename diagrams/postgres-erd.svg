@@ -1,0 +1,218 @@
+<svg viewBox="0 0 1100 820" xmlns="http://www.w3.org/2000/svg" font-family="'SF Mono', 'Fira Mono', 'Consolas', monospace" font-size="11">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8"/>
+    </marker>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#00000025"/>
+    </filter>
+    <!-- Glow for chunks table -->
+    <filter id="glow">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#a855f7" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1100" height="820" fill="#0f172a"/>
+
+  <!-- Title -->
+  <text x="550" y="32" text-anchor="middle" fill="#e2e8f0" font-size="15" font-weight="bold" font-family="'Inter','Helvetica Neue',sans-serif">codon-rag · PostgreSQL + pgvector Schema</text>
+  <text x="550" y="50" text-anchor="middle" fill="#64748b" font-size="10" font-family="'Inter','Helvetica Neue',sans-serif">ChromaDB removed · embeddings in chunks table · one DB, one connection string</text>
+
+  <!-- "ChromaDB gone" callout -->
+  <rect x="420" y="58" width="260" height="18" rx="3" fill="#7f1d1d" stroke="#ef4444" stroke-width="1" opacity="0.8"/>
+  <text x="550" y="71" text-anchor="middle" fill="#fca5a5" font-size="9" font-family="'Inter','Helvetica Neue',sans-serif">✕  chroma_db/ directory eliminated</text>
+
+  <!-- ── kbs (center-top) ──────────────────────────────── x=400, y=88 w=260 -->
+  <g filter="url(#shadow)">
+    <rect x="400" y="88" width="260" height="150" rx="6" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+    <rect x="400" y="88" width="260" height="28" rx="6" fill="#3b82f6"/>
+    <rect x="400" y="110" width="260" height="6" fill="#3b82f6"/>
+  </g>
+  <text x="530" y="107" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="bold" font-family="'Inter','Helvetica Neue',sans-serif">kbs</text>
+  <line x1="400" y1="124" x2="660" y2="124" stroke="#334155" stroke-width="1"/>
+  <text x="412" y="138" fill="#fbbf24" font-size="10">PK</text><text x="436" y="138" fill="#e2e8f0">kb_id        TEXT</text>
+  <line x1="400" y1="144" x2="660" y2="144" stroke="#1e3a5f" stroke-width="0.5"/>
+  <text x="412" y="158" fill="#94a3b8" font-size="10">   description  TEXT</text>
+  <text x="412" y="172" fill="#4ade80" font-size="10">{}  config        JSONB</text>
+  <text x="412" y="186" fill="#4ade80" font-size="10">{}  build_stats   JSONB</text>
+  <text x="412" y="200" fill="#94a3b8" font-size="10">   created_at    TIMESTAMPTZ</text>
+  <text x="412" y="228" fill="#64748b" font-size="9" font-style="italic">TEXT→TEXT (natural key), JSON→JSONB</text>
+
+  <!-- ── documents (left) ─────────────────────────────── x=30, y=300 w=260 -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="300" width="265" height="185" rx="6" fill="#1e293b" stroke="#8b5cf6" stroke-width="1.5"/>
+    <rect x="30" y="300" width="265" height="28" rx="6" fill="#8b5cf6"/>
+    <rect x="30" y="322" width="265" height="6" fill="#8b5cf6"/>
+  </g>
+  <text x="162" y="319" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="bold" font-family="'Inter','Helvetica Neue',sans-serif">documents</text>
+  <line x1="30" y1="336" x2="295" y2="336" stroke="#334155" stroke-width="1"/>
+  <text x="42" y="350" fill="#fbbf24" font-size="10">PK</text><text x="66" y="350" fill="#e2e8f0">doc_id      UUID  (gen_random_uuid)</text>
+  <line x1="30" y1="356" x2="295" y2="356" stroke="#1e3a5f" stroke-width="0.5"/>
+  <text x="42" y="370" fill="#60a5fa" font-size="10">FK</text><text x="66" y="370" fill="#e2e8f0">kb_id       TEXT</text>
+  <text x="42" y="384" fill="#94a3b8" font-size="10">   filename   TEXT</text>
+  <text x="42" y="398" fill="#f97316" font-size="10">▣  content    BYTEA</text>
+  <text x="42" y="412" fill="#94a3b8" font-size="10">   size       INTEGER</text>
+  <text x="42" y="426" fill="#94a3b8" font-size="10">   hash       TEXT  (SHA-256)</text>
+  <text x="42" y="440" fill="#94a3b8" font-size="10">   uploaded_at TIMESTAMPTZ</text>
+  <text x="42" y="462" fill="#64748b" font-size="9" font-style="italic">TEXT PRIMARY KEY → UUID</text>
+  <text x="42" y="476" fill="#64748b" font-size="9" font-style="italic">BLOB → BYTEA · TEXT → TIMESTAMPTZ</text>
+
+  <!-- ── chunks (NEW — center-left, prominent) ────────── x=340, y=290 w=280 -->
+  <g filter="url(#glow)">
+    <rect x="340" y="290" width="280" height="195" rx="6" fill="#1e1b2e" stroke="#a855f7" stroke-width="2"/>
+    <rect x="340" y="290" width="280" height="28" rx="6" fill="#7c3aed"/>
+    <rect x="340" y="312" width="280" height="6" fill="#7c3aed"/>
+  </g>
+  <!-- NEW badge -->
+  <rect x="584" y="283" width="32" height="14" rx="3" fill="#a855f7"/>
+  <text x="600" y="293" text-anchor="middle" fill="#ffffff" font-size="8" font-weight="bold" font-family="'Inter','Helvetica Neue',sans-serif">NEW</text>
+  <text x="480" y="309" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="bold" font-family="'Inter','Helvetica Neue',sans-serif">chunks</text>
+  <line x1="340" y1="326" x2="620" y2="326" stroke="#334155" stroke-width="1"/>
+  <text x="352" y="340" fill="#fbbf24" font-size="10">PK</text><text x="376" y="340" fill="#e2e8f0">chunk_id     UUID</text>
+  <line x1="340" y1="346" x2="620" y2="346" stroke="#2d1f4e" stroke-width="0.5"/>
+  <text x="352" y="360" fill="#60a5fa" font-size="10">FK</text><text x="376" y="360" fill="#e2e8f0">doc_id       UUID → documents</text>
+  <text x="352" y="374" fill="#60a5fa" font-size="10">FK</text><text x="376" y="374" fill="#e2e8f0">kb_id        TEXT → kbs</text>
+  <text x="352" y="388" fill="#94a3b8" font-size="10">   content      TEXT</text>
+  <!-- vector column highlight -->
+  <rect x="348" y="394" width="264" height="18" rx="3" fill="#3b1f6b" opacity="0.8"/>
+  <text x="352" y="407" fill="#e879f9" font-size="10" font-weight="bold">~  embedding    vector(384)</text>
+  <text x="352" y="421" fill="#94a3b8" font-size="10">   chunk_index  INTEGER</text>
+  <text x="352" y="435" fill="#4ade80" font-size="10">{}  metadata     JSONB</text>
+  <text x="352" y="449" fill="#94a3b8" font-size="10">   created_at   TIMESTAMPTZ</text>
+  <text x="352" y="471" fill="#64748b" font-size="9" font-style="italic">replaces all ChromaDB collections</text>
+  <text x="352" y="483" fill="#a855f7" font-size="9" font-style="italic">INDEX: HNSW (vector_cosine_ops)</text>
+
+  <!-- ── test_questions (right) ───────────────────────── x=760, y=300 w=260 -->
+  <g filter="url(#shadow)">
+    <rect x="760" y="300" width="260" height="155" rx="6" fill="#1e293b" stroke="#06b6d4" stroke-width="1.5"/>
+    <rect x="760" y="300" width="260" height="28" rx="6" fill="#06b6d4"/>
+    <rect x="760" y="322" width="260" height="6" fill="#06b6d4"/>
+  </g>
+  <text x="890" y="319" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="bold" font-family="'Inter','Helvetica Neue',sans-serif">test_questions</text>
+  <line x1="760" y1="336" x2="1020" y2="336" stroke="#334155" stroke-width="1"/>
+  <text x="772" y="350" fill="#fbbf24" font-size="10">PK</text><text x="796" y="350" fill="#e2e8f0">q_id          UUID</text>
+  <line x1="760" y1="356" x2="1020" y2="356" stroke="#1e3a5f" stroke-width="0.5"/>
+  <text x="772" y="370" fill="#60a5fa" font-size="10">FK</text><text x="796" y="370" fill="#e2e8f0">kb_id         TEXT</text>
+  <text x="772" y="384" fill="#94a3b8" font-size="10">   question      TEXT</text>
+  <text x="772" y="398" fill="#94a3b8" font-size="10">   ground_truth  TEXT</text>
+  <text x="772" y="412" fill="#4ade80" font-size="10">[] tags          JSONB</text>
+  <text x="772" y="426" fill="#94a3b8" font-size="10">   created_at    TIMESTAMPTZ</text>
+  <text x="772" y="448" fill="#64748b" font-size="9" font-style="italic">TEXT PRIMARY KEY → UUID · JSON→JSONB</text>
+
+  <!-- ── eval_runs (bottom-left) ──────────────────────── x=30, y=545 w=260 -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="545" width="265" height="145" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5"/>
+    <rect x="30" y="545" width="265" height="28" rx="6" fill="#f59e0b"/>
+    <rect x="30" y="567" width="265" height="6" fill="#f59e0b"/>
+  </g>
+  <text x="162" y="564" text-anchor="middle" fill="#0f172a" font-size="12" font-weight="bold" font-family="'Inter','Helvetica Neue',sans-serif">eval_runs</text>
+  <line x1="30" y1="581" x2="295" y2="581" stroke="#334155" stroke-width="1"/>
+  <text x="42" y="595" fill="#fbbf24" font-size="10">PK</text><text x="66" y="595" fill="#e2e8f0">run_id      UUID</text>
+  <line x1="30" y1="601" x2="295" y2="601" stroke="#1e3a5f" stroke-width="0.5"/>
+  <text x="42" y="615" fill="#60a5fa" font-size="10">FK</text><text x="66" y="615" fill="#e2e8f0">kb_id       TEXT</text>
+  <text x="42" y="629" fill="#94a3b8" font-size="10">   note        TEXT</text>
+  <text x="42" y="643" fill="#4ade80" font-size="10">{}  params      JSONB</text>
+  <text x="42" y="657" fill="#94a3b8" font-size="10">   status      TEXT</text>
+  <text x="42" y="671" fill="#94a3b8" font-size="10">   started_at  TIMESTAMPTZ</text>
+  <text x="42" y="685" fill="#94a3b8" font-size="10">   finished_at TIMESTAMPTZ</text>
+
+  <!-- ── eval_samples (bottom-center) ─────────────────── x=340, y=545 w=300 -->
+  <g filter="url(#shadow)">
+    <rect x="340" y="545" width="300" height="185" rx="6" fill="#1e293b" stroke="#ec4899" stroke-width="1.5"/>
+    <rect x="340" y="545" width="300" height="28" rx="6" fill="#ec4899"/>
+    <rect x="340" y="567" width="300" height="6" fill="#ec4899"/>
+  </g>
+  <text x="490" y="564" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="bold" font-family="'Inter','Helvetica Neue',sans-serif">eval_samples</text>
+  <line x1="340" y1="581" x2="640" y2="581" stroke="#334155" stroke-width="1"/>
+  <text x="352" y="595" fill="#fbbf24" font-size="10">PK</text><text x="376" y="595" fill="#e2e8f0">sample_id  UUID</text>
+  <line x1="340" y1="601" x2="640" y2="601" stroke="#1e3a5f" stroke-width="0.5"/>
+  <text x="352" y="615" fill="#60a5fa" font-size="10">FK</text><text x="376" y="615" fill="#e2e8f0">run_id     UUID → eval_runs</text>
+  <text x="352" y="629" fill="#60a5fa" font-size="10">FK</text><text x="376" y="629" fill="#e2e8f0">q_id       UUID → test_questions</text>
+  <text x="352" y="643" fill="#94a3b8" font-size="10">   question   TEXT</text>
+  <text x="352" y="657" fill="#94a3b8" font-size="10">   answer     TEXT</text>
+  <text x="352" y="671" fill="#4ade80" font-size="10">[] contexts  JSONB</text>
+  <text x="352" y="685" fill="#4ade80" font-size="10">{}  scores    JSONB</text>
+  <text x="352" y="699" fill="#94a3b8" font-size="10">   error      TEXT</text>
+  <text x="352" y="713" fill="#94a3b8" font-size="10">   created_at TIMESTAMPTZ</text>
+  <text x="352" y="725" fill="#64748b" font-size="9" font-style="italic">TEXT→UUID · JSON TEXT→JSONB</text>
+
+  <!-- ── grid_runs (bottom-right) ─────────────────────── x=680, y=545 w=260 -->
+  <g filter="url(#shadow)">
+    <rect x="680" y="545" width="340" height="130" rx="6" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
+    <rect x="680" y="545" width="340" height="28" rx="6" fill="#10b981"/>
+    <rect x="680" y="567" width="340" height="6" fill="#10b981"/>
+  </g>
+  <text x="850" y="564" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="bold" font-family="'Inter','Helvetica Neue',sans-serif">grid_runs</text>
+  <line x1="680" y1="581" x2="1020" y2="581" stroke="#334155" stroke-width="1"/>
+  <text x="692" y="595" fill="#fbbf24" font-size="10">PK</text><text x="716" y="595" fill="#e2e8f0">grid_run_id   UUID</text>
+  <line x1="680" y1="601" x2="1020" y2="601" stroke="#1e3a5f" stroke-width="0.5"/>
+  <text x="692" y="615" fill="#60a5fa" font-size="10">FK</text><text x="716" y="615" fill="#e2e8f0">kb_id         TEXT</text>
+  <text x="692" y="629" fill="#4ade80" font-size="10">{}  params_grid   JSONB</text>
+  <text x="692" y="643" fill="#94a3b8" font-size="10">   status        TEXT</text>
+  <text x="692" y="657" fill="#94a3b8" font-size="10">   started_at    TIMESTAMPTZ</text>
+  <text x="692" y="671" fill="#94a3b8" font-size="10">   finished_at   TIMESTAMPTZ</text>
+
+  <!-- grid_cells (far-right-bottom) ────────────────────── x=680, y=710 w=340 -->
+  <g filter="url(#shadow)">
+    <rect x="680" y="712" width="340" height="95" rx="6" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
+    <rect x="680" y="712" width="340" height="24" rx="6" fill="#10b981"/>
+    <rect x="680" y="730" width="340" height="6" fill="#10b981"/>
+  </g>
+  <text x="850" y="729" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="bold" font-family="'Inter','Helvetica Neue',sans-serif">grid_cells</text>
+  <line x1="680" y1="742" x2="1020" y2="742" stroke="#334155" stroke-width="1"/>
+  <text x="692" y="756" fill="#fbbf24" font-size="10">PK</text><text x="716" y="756" fill="#e2e8f0">cell_id           UUID</text>
+  <text x="692" y="770" fill="#60a5fa" font-size="10">FK</text><text x="716" y="770" fill="#e2e8f0">grid_run_id       UUID</text>
+  <text x="692" y="784" fill="#94a3b8" font-size="10">   chunk_strategy, top_k, threshold, chunk_size</text>
+  <text x="692" y="798" fill="#4ade80" font-size="10">{}  scores JSONB  [] samples JSONB   duration_s</text>
+
+  <!-- ── Relationship lines ────────────────────────────────────────────── -->
+  <!-- kbs → documents -->
+  <line x1="460" y1="238" x2="460" y2="268" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="460" y1="268" x2="162" y2="268" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="162" y1="268" x2="162" y2="300" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- kbs → chunks -->
+  <line x1="480" y1="238" x2="480" y2="290" stroke="#a855f7" stroke-width="1.5" stroke-dasharray="none" marker-end="url(#arrow)"/>
+
+  <!-- kbs → test_questions -->
+  <line x1="600" y1="238" x2="600" y2="275" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="600" y1="275" x2="890" y2="275" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="890" y1="275" x2="890" y2="300" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- kbs → eval_runs -->
+  <line x1="400" y1="163" x2="360" y2="163" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="360" y1="163" x2="360" y2="525" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="360" y1="525" x2="162" y2="525" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="162" y1="525" x2="162" y2="545" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- kbs → grid_runs -->
+  <line x1="660" y1="163" x2="700" y2="163" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="700" y1="163" x2="700" y2="525" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="700" y1="525" x2="720" y2="525" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="720" y1="525" x2="720" y2="545" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- documents → chunks -->
+  <line x1="295" y1="370" x2="340" y2="370" stroke="#a855f7" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- eval_runs → eval_samples -->
+  <line x1="295" y1="617" x2="340" y2="617" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- test_questions → eval_samples (dashed = nullable) -->
+  <line x1="760" y1="393" x2="720" y2="393" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="720" y1="393" x2="720" y2="641" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="720" y1="641" x2="640" y2="641" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+  <!-- grid_runs → grid_cells -->
+  <line x1="850" y1="675" x2="850" y2="712" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- Legend -->
+  <rect x="30" y="742" width="295" height="68" rx="4" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="44" y="760" fill="#94a3b8" font-size="10" font-family="'Inter','Helvetica Neue',sans-serif">Legend</text>
+  <text x="44" y="776" fill="#fbbf24" font-size="10">PK</text><text x="64" y="776" fill="#64748b" font-size="10"> Primary key (UUID unless noted)</text>
+  <text x="44" y="790" fill="#60a5fa" font-size="10">FK</text><text x="64" y="790" fill="#64748b" font-size="10"> Foreign key</text>
+  <text x="44" y="804" fill="#f97316" font-size="10">▣  </text><text x="58" y="804" fill="#64748b" font-size="10"> BYTEA blob  ╌╌╌ nullable FK</text>
+  <text x="165" y="776" fill="#4ade80" font-size="10">{}</text><text x="182" y="776" fill="#64748b" font-size="10"> JSONB (indexed)</text>
+  <text x="165" y="790" fill="#e879f9" font-size="10">~  </text><text x="182" y="790" fill="#64748b" font-size="10"> vector(384) pgvector</text>
+  <text x="165" y="804" fill="#a855f7" font-size="10">━  </text><text x="182" y="804" fill="#a855f7" font-size="10"> new in this step</text>
+</svg>
